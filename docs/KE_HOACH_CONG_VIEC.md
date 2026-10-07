@@ -1,10 +1,7 @@
-# Kế hoạch công việc Campus Incident Management — 7 mảng song song
+# Kế hoạch công việc Campus Incident Management 
 
-**Thời gian:** 12/10/2026–03/01/2027 để hoàn thành mã nguồn, kiểm thử và bàn giao. Từ 04/01 đến 12/01/2027 chỉ ôn tập, diễn tập và bảo vệ. **N1–N7 là vị trí trống để bạn tự gán tên**, nhưng mỗi vị trí sở hữu cố định một mảng xuyên suốt dự án.
-
+**Thời gian:** 12/10/2026–03/01/2027 để hoàn thành mã nguồn, kiểm thử và bàn giao. Từ 04/01 đến 12/01/2027 chỉ ôn tập, diễn tập và bảo vệ.
 Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, API contract, skeleton React/FastAPI, health API, PostgreSQL/Compose cơ bản và workflow health đã có, không giao lại. Phạm vi nền tảng là ba loại báo cáo MVP; các mở rộng chỉ nhận thêm sau khi nhóm xác nhận thời gian và rubric.
-
-## Cách làm song song, không để ai ngồi chờ
 
 - Dùng [API contract](api-contract.md) và [đặc tả phần A](phan-a-yeu-cau-nghiep-vu.md) làm đầu vào chung đã có từ ngày đầu. N1 công bố fixture Principal, N2 công bố fixture Incident, N3–N5 công bố fixture rule/state/event, N6–N7 dùng mock API đúng contract. Mỗi người code và test trên fixture của mảng mình ngay cả khi API thật chưa ghép.
 - Mỗi người chỉ sửa module và migration thuộc mảng mình. Migrations mới là additive; không sửa revision của người khác. Khi cần đổi contract, ghi rõ endpoint/schema và cập nhật fixture + test liên quan trước khi ghép.
