@@ -1,0 +1,51 @@
+{
+  "name": "Campus Incident Management - Backend health check",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "88853c99-9760-4c38-bb52-f9a6343bcfbd",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:8000/api/v1/health/live",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "cbf045e6-8cf8-463c-9331-ec7de8c7f49d",
+      "name": "Backend liveness",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Backend liveness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "id": "CIMHealthCheck001"
+}

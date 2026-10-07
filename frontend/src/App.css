@@ -1,0 +1,18 @@
+.shell { max-width: 880px; margin: 0 auto; padding: 64px 24px; }
+.eyebrow { color: #526076; font-size: .85rem; font-weight: 600; }
+h1 { margin: 12px 0; font-size: clamp(2rem, 6vw, 3.5rem); letter-spacing: -.04em; }
+.intro { max-width: 660px; color: #526076; font-size: 1.15rem; }
+section { margin-top: 36px; border-top: 1px solid #d5dce7; padding-top: 24px; }
+h2 { font-size: 1.3rem; }
+.health { font-weight: 600; }
+.online { color: #14613b; }
+.offline { color: #a12822; }
+.checking { color: #526076; }
+button { background: #173b66; color: white; border: 0; border-radius: 6px; padding: 12px 18px; font: inherit; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+button:focus-visible { outline: 3px solid #a25704; outline-offset: 4px; }
+.hint, footer { color: #526076; font-size: .9rem; }
+.scope { padding-left: 24px; }
+.scope li { padding: 8px 0; }
+.scope span { display: block; color: #526076; }
+footer { margin-top: 48px; }
