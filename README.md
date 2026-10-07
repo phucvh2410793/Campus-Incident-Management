@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Campus Incident Management
 
 Campus Incident Management là dự án nhóm xây dựng nền tảng web tiếp nhận, phân công và theo dõi sự cố an toàn, an ninh trong khuôn viên trường đại học. Dự án sử dụng các quy tắc định sẵn để đánh giá mức độ nghiêm trọng, xác định độ ưu tiên và chuyển sự cố đến bộ phận phụ trách; n8n điều phối các workflow thông báo và theo dõi thời hạn phản hồi.
@@ -242,6 +241,3 @@ Dùng bộ tình huống có kết quả kỳ vọng được thống nhất tr�
 - [n8n Docker installation](https://docs.n8n.io/deploy/host-n8n/install-options/install-with-docker.md)
 
 =======
-# Campus-Incident-Management
-GroupProject26-27
->>>>>>> 9d1ee57b628dcdf43a4936c045d26db3edc00d77
