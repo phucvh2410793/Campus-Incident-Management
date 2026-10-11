@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "principal": {"id": "10000000-0000-4000-8000-000000000001", "role": "department_manager", "department_id": "20000000-0000-4000-8000-000000000001"},
+  "incident": {"id": "30000000-0000-4000-8000-000000000001", "version": 1, "status": "reported", "department_id": "20000000-0000-4000-8000-000000000001", "handler_id": null, "acknowledged_at": null},
+  "assign_request": {"department_id": "20000000-0000-4000-8000-000000000001", "handler_id": null, "reason": "Chuyển đến bộ phận phụ trách", "expected_version": 1},
+  "comment_request": {"body": "Đã kiểm tra hiện trường", "visibility": "internal", "expected_version": 2},
+  "comment_response": {"id": "40000000-0000-4000-8000-000000000001", "body": "Đã kiểm tra hiện trường", "visibility": "internal", "created_at": "2026-10-12T02:00:00Z", "incident_version": 3},
+  "acknowledge_request": {"expected_version": 3},
+  "resolve_request": {"target_status": "resolved", "resolution": "Đã thay thiết bị hỏng và kiểm tra lại", "expected_version": 4},
+  "reopen_request": {"target_status": "in_progress", "reason": "Sự cố tái diễn", "expected_version": 6},
+  "duplicate_request": {"kind": "duplicate", "reason": "Cùng sự cố đã được ghi nhận", "duplicate_of_id": "30000000-0000-4000-8000-000000000002", "expected_version": 1}
+}
