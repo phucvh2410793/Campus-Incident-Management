@@ -95,7 +95,7 @@ Hàng đợi `triage_required` dùng một bộ phận nội bộ `triage_queue`
   "description": "Nước chảy từ trần gần cửa phòng học, sàn đang ướt.",
   "building": "Tòa A",
   "location_detail": "Tầng 2, gần phòng 205",
-  "observed_at": "2026-11-02T09:20:00Z",
+  "observed_at": "2026-10-11T02:15:00Z",
   "answers": {"leak_amount": "small", "near_electricity": "no", "slip_risk": true}
 }
 ```
@@ -110,6 +110,8 @@ Trường chung: `title` 5–120 ký tự, `description` 20–2000, `building` 1
 
 Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknown` hợp lệ nhưng có thể dẫn tới `triage_required=true`, không phải 422. Field không có trong schema bị 422. File được upload **sau khi** incident tạo thành công ở endpoint riêng; lỗi upload không xóa incident và UI phải báo rõ tình trạng từng file.
 
+Schema lưu trữ do N2 chốt ở [incident data model](incident-data-model.md); ba bộ dữ liệu giả ổn định cho N2–N7 nằm tại [shared incident fixtures](fixtures/incidents.json). Fixture ID dùng cho test/mock, không phải ID do client gửi khi tạo incident.
+
 ### IncidentResponse
 
 ```json
@@ -121,7 +123,7 @@ Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknow
   "description": "Nước chảy từ trần gần cửa phòng học, sàn đang ướt.",
   "building": "Tòa A",
   "location_detail": "Tầng 2, gần phòng 205",
-  "observed_at": "2026-11-02T09:20:00Z",
+  "observed_at": "2026-10-11T02:15:00Z",
   "answers": {"leak_amount": "small", "near_electricity": "no", "slip_risk": true},
   "reporter_id": "22e09230-76fd-4638-a97f-96919031e40b",
   "status": "reported",
@@ -131,7 +133,7 @@ Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknow
   "department_id": null,
   "assigned_handler_id": null,
   "rule_evaluation": null,
-  "reported_at": "2026-11-02T09:30:00Z",
+  "reported_at": "2026-10-11T02:20:00Z",
   "assigned_at": null,
   "acknowledged_at": null,
   "resolved_at": null,
@@ -225,7 +227,7 @@ n8n không gọi các endpoint user. Backend dispatcher gửi outbox event đế
   "event_id": "d69996e8-ae76-44d4-a396-41694498feb3",
   "event_type": "incident.reported",
   "incident_id": "2ee24992-34d3-4955-9e5c-f7446fd42393",
-  "occurred_at": "2026-11-02T09:30:00Z",
+  "occurred_at": "2026-10-11T02:20:00Z",
   "schema_version": 1,
   "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d"
 }

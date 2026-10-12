@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic Campus Incident Management examples for N2-N7; request bodies follow docs/api-contract.md.",
+  "fixtures": [
+    {
+      "fixture_id": "n2-w1-water-small-001",
+      "mock_incident_id": "20000000-0000-4000-8000-000000000001",
+      "idempotency_key": "30000000-0000-4000-8000-000000000001",
+      "request": {
+        "category": "water_leak",
+        "title": "Small leak in Building A hallway",
+        "description": "A small amount of water is dripping onto the hallway floor.",
+        "building": "Building A",
+        "location_detail": "Second floor, near room 205",
+        "observed_at": "2026-10-11T02:15:00Z",
+        "answers": {
+          "leak_amount": "small",
+          "near_electricity": "no",
+          "slip_risk": false
+        }
+      },
+      "expected_evaluation": {
+        "severity": "low",
+        "priority": "p3",
+        "department": "Cơ sở vật chất",
+        "triage_required": false,
+        "reason": "Small leak with no nearby electrical hazard"
+      },
+      "mock_response": {
+        "id": "20000000-0000-4000-8000-000000000001",
+        "version": 1,
+        "category": "water_leak",
+        "title": "Small leak in Building A hallway",
+        "description": "A small amount of water is dripping onto the hallway floor.",
+        "building": "Building A",
+        "location_detail": "Second floor, near room 205",
+        "observed_at": "2026-10-11T02:15:00Z",
+        "answers": {
+          "leak_amount": "small",
+          "near_electricity": "no",
+          "slip_risk": false
+        },
+        "reporter_id": "10000000-0000-4000-8000-000000000001",
+        "status": "reported",
+        "triage_required": false,
+        "severity": null,
+        "priority": null,
+        "department_id": null,
+        "assigned_handler_id": null,
+        "rule_evaluation": null,
+        "reported_at": "2026-10-11T02:20:00Z",
+        "assigned_at": null,
+        "acknowledged_at": null,
+        "resolved_at": null,
+        "closed_at": null,
+        "acknowledgment_deadline_at": null,
+        "escalation_level": 0
+      }
+    },
+    {
+      "fixture_id": "n2-w1-electrical-smoke-001",
+      "mock_incident_id": "20000000-0000-4000-8000-000000000002",
+      "idempotency_key": "30000000-0000-4000-8000-000000000002",
+      "request": {
+        "category": "electrical_hazard",
+        "title": "Smoke near a hallway electrical panel",
+        "description": "Smoke is visible near the electrical panel in the hallway.",
+        "building": "Building B",
+        "location_detail": "Ground floor, west hallway",
+        "observed_at": "2026-10-11T03:10:00Z",
+        "answers": {
+          "exposed_wire": "unknown",
+          "smoke_or_sparks": "yes",
+          "equipment": "Hallway electrical panel"
+        }
+      },
+      "expected_evaluation": {
+        "severity": "critical",
+        "priority": "p1",
+        "department": "Điện và an toàn",
+        "triage_required": false,
+        "reason": "Smoke or sparks indicate immediate electrical danger"
+      },
+      "mock_response": {
+        "id": "20000000-0000-4000-8000-000000000002",
+        "version": 1,
+        "category": "electrical_hazard",
+        "title": "Smoke near a hallway electrical panel",
+        "description": "Smoke is visible near the electrical panel in the hallway.",
+        "building": "Building B",
+        "location_detail": "Ground floor, west hallway",
+        "observed_at": "2026-10-11T03:10:00Z",
+        "answers": {
+          "exposed_wire": "unknown",
+          "smoke_or_sparks": "yes",
+          "equipment": "Hallway electrical panel"
+        },
+        "reporter_id": "10000000-0000-4000-8000-000000000001",
+        "status": "reported",
+        "triage_required": false,
+        "severity": null,
+        "priority": null,
+        "department_id": null,
+        "assigned_handler_id": null,
+        "rule_evaluation": null,
+        "reported_at": "2026-10-11T03:15:00Z",
+        "assigned_at": null,
+        "acknowledged_at": null,
+        "resolved_at": null,
+        "closed_at": null,
+        "acknowledgment_deadline_at": null,
+        "escalation_level": 0
+      }
+    },
+    {
+      "fixture_id": "n2-w1-phishing-entered-information-001",
+      "mock_incident_id": "20000000-0000-4000-8000-000000000003",
+      "idempotency_key": "30000000-0000-4000-8000-000000000003",
+      "request": {
+        "category": "phishing",
+        "title": "Suspicious email information entered",
+        "description": "I entered account information after opening a suspicious email link.",
+        "building": "Building C",
+        "location_detail": "Library, second floor",
+        "observed_at": "2026-10-11T04:05:00Z",
+        "answers": {
+          "interaction": "entered_information",
+          "channel": "email",
+          "sender_text": "security-notice@example.invalid"
+        }
+      },
+      "expected_evaluation": {
+        "severity": "high",
+        "priority": "p1",
+        "department": "IT/Security",
+        "triage_required": false,
+        "reason": "The reporter entered information after interacting with a phishing message"
+      },
+      "mock_response": {
+        "id": "20000000-0000-4000-8000-000000000003",
+        "version": 1,
+        "category": "phishing",
+        "title": "Suspicious email information entered",
+        "description": "I entered account information after opening a suspicious email link.",
+        "building": "Building C",
+        "location_detail": "Library, second floor",
+        "observed_at": "2026-10-11T04:05:00Z",
+        "answers": {
+          "interaction": "entered_information",
+          "channel": "email",
+          "sender_text": "security-notice@example.invalid"
+        },
+        "reporter_id": "10000000-0000-4000-8000-000000000001",
+        "status": "reported",
+        "triage_required": false,
+        "severity": null,
+        "priority": null,
+        "department_id": null,
+        "assigned_handler_id": null,
+        "rule_evaluation": null,
+        "reported_at": "2026-10-11T04:10:00Z",
+        "assigned_at": null,
+        "acknowledged_at": null,
+        "resolved_at": null,
+        "closed_at": null,
+        "acknowledgment_deadline_at": null,
+        "escalation_level": 0
+      }
+    }
+  ]
+}
