@@ -1,0 +1,35 @@
+[
+  {
+    "description": "Thieu incident_id bat buoc",
+    "payload": {
+      "event_id": "d69996e8-ae76-44d4-a396-41694498feb3",
+      "event_type": "incident.reported",
+      "occurred_at": "2026-11-02T09:30:00Z",
+      "schema_version": 1,
+      "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d"
+    }
+  },
+  {
+    "description": "Event type khong hop le",
+    "payload": {
+      "event_id": "d69996e8-ae76-44d4-a396-41694498feb3",
+      "event_type": "incident.unknown_action",
+      "incident_id": "2ee24992-34d3-4955-9e5c-f7446fd42393",
+      "occurred_at": "2026-11-02T09:30:00Z",
+      "schema_version": 1,
+      "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d"
+    }
+  },
+  {
+    "description": "Truong du thua nhay cam bi cam trong event envelope",
+    "payload": {
+      "event_id": "d69996e8-ae76-44d4-a396-41694498feb3",
+      "event_type": "incident.reported",
+      "incident_id": "2ee24992-34d3-4955-9e5c-f7446fd42393",
+      "occurred_at": "2026-11-02T09:30:00Z",
+      "schema_version": 1,
+      "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d",
+      "internal_evidence": "Leak of sensitive details"
+    }
+  }
+]
