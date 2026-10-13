@@ -1,0 +1,8 @@
+{
+  "event_id": "a1112222-3333-4444-5555-666677778888",
+  "event_type": "incident.assigned",
+  "incident_id": "2ee24992-34d3-4955-9e5c-f7446fd42393",
+  "occurred_at": "2026-11-02T09:35:00Z",
+  "schema_version": 1,
+  "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d"
+}
