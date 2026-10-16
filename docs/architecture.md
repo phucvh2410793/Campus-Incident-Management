@@ -11,7 +11,7 @@ flowchart LR
     N8N[n8n :5678] --> Store[(Volume n8n / SQLite)]
 ```
 
-Backend có liveness/readiness, cấu hình CORS giới hạn, kết nối SQLAlchemy và model/migration `users`, `departments`. Chưa có API tài khoản hoặc incident. Database được quản lý bằng Alembic, không tạo bảng tự động khi API chạy.
+Backend có liveness/readiness, cấu hình CORS giới hạn, kết nối SQLAlchemy và model/migration `users`, `departments`, `user_sessions`. Nhánh N1 có API login/me/logout; chưa có API incident. Database được quản lý bằng Alembic, không tạo bảng tự động khi API chạy. [ERD và fixture Principal/Policy](n1-identity-contract.md) là hợp đồng W1 dùng chung.
 
 n8n hiện tách biệt với dữ liệu ứng dụng. Workflow health check mẫu đã import và chạy thành công; chưa có luồng báo cáo/phân công/thông báo.
 
@@ -25,6 +25,6 @@ n8n hiện tách biệt với dữ liệu ứng dụng. Workflow health check m�
 
 ## Thiết kế đã chốt cho demo và giới hạn hiện tại
 
-Phạm vi ba loại, ma trận quyền và ngưỡng SLA demo đã được đề xuất trong [đặc tả phần A](phan-a-yeu-cau-nghiep-vu.md). [API contract](api-contract.md) đã chọn bearer session lưu hash ở backend, event/outbox, mã lỗi và luồng n8n; đây là **thiết kế chưa được lập trình**. Trước vận hành thật vẫn cần xác nhận quy trình trường, đầu mối khẩn cấp và chính sách dữ liệu. Cấu trúc bảng, chính sách file thực thi và retry cần triển khai theo kế hoạch. Migration identity ban đầu sử dụng một role/bộ phận cho mỗi user; nếu cần nhiều membership, thêm migration thay vì sửa revision đã áp dụng.
+Phạm vi ba loại, ma trận quyền và ngưỡng SLA demo đã được đề xuất trong [đặc tả phần A](phan-a-yeu-cau-nghiep-vu.md). [API contract](api-contract.md) đã chọn bearer session lưu hash ở backend, event/outbox, mã lỗi và luồng n8n; mới có một phần auth ở nhánh N1, các phần còn lại vẫn là thiết kế. Trước vận hành thật vẫn cần xác nhận quy trình trường, đầu mối khẩn cấp và chính sách dữ liệu. Cấu trúc bảng, chính sách file thực thi và retry cần triển khai theo kế hoạch. Migration identity ban đầu sử dụng một role/bộ phận cho mỗi user; nếu cần nhiều membership, thêm migration thay vì sửa revision đã áp dụng.
 
 Compose chỉ dành cho localhost. Khi triển khai production cần reverse proxy/static frontend, HTTPS, quản lý secrets, backup, giới hạn tài nguyên và cấu hình log phù hợp.
