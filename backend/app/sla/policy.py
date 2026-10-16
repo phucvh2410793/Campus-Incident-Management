@@ -1,12 +1,12 @@
 ﻿from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-Priority = Literal["P1", "P2", "P3"]
+Priority = Literal["p1", "p2", "p3"]
 
 ACKNOWLEDGEMENT_SLA = {
-    "P1": timedelta(minutes=15),
-    "P2": timedelta(hours=2),
-    "P3": timedelta(hours=8),
+    "p1": timedelta(minutes=15),
+    "p2": timedelta(hours=2),
+    "p3": timedelta(hours=8),
 }
 
 

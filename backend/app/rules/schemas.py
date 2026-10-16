@@ -2,8 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Severity = Literal["Low", "Medium", "High", "Critical"]
-Priority = Literal["P1", "P2", "P3"]
+Severity = Literal["low", "medium", "high", "critical"]
+Priority = Literal["p1", "p2", "p3"]
 
 
 class RuleResult(BaseModel):

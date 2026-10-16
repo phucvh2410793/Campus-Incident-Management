@@ -6,11 +6,11 @@ import pytest
 
 from app.sla.clock import FakeClock
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "n3_cases.json"
+FIXTURE_PATH = Path(__file__).parents[2] / "docs" / "fixtures" / "n3_cases.json"
 
 
 def load_n3_cases():
-    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8-sig"))
+    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 def test_fake_clock_can_advance():
@@ -32,16 +32,19 @@ def test_classification_fixture_cases_are_complete():
     data = load_n3_cases()
     cases = data["classification_cases"]
 
+    assert data["schema_version"] == 1
     assert data["rule_version"] == "demo-v1"
     assert [case["test_id"] for case in cases] == [
         "T01", "T02", "T03", "T04", "T05", "T06"
     ]
 
     for case in cases:
-        assert "report_type" in case
-        assert "input" in case
-        assert "expected" in case
-        assert "triage_required" in case["expected"]
+        assert case["request"]["category"] in {
+            "water_leak", "electrical_hazard", "phishing"
+        }
+        assert case["expected"]["rule_version"] == data["rule_version"]
+        assert case["expected"]["reason"]
+        assert case["expected"]["priority"] in {"p1", "p2", "p3", None}
 
 
 def test_unknown_case_requires_manual_triage_without_priority():
@@ -51,6 +54,9 @@ def test_unknown_case_requires_manual_triage_without_priority():
     assert case["expected"]["triage_required"] is True
     assert case["expected"]["priority"] is None
     assert case["expected"]["severity"] is None
+    assert case["request"]["answers"] == {
+        "leak_amount": "unknown", "near_electricity": "unknown"
+    }
 
 
 def test_sla_fixtures_cover_t10_to_t12():
@@ -59,4 +65,15 @@ def test_sla_fixtures_cover_t10_to_t12():
     assert [case["test_id"] for case in cases] == ["T10", "T11", "T12"]
     assert cases[0]["expected_escalation"] is True
     assert cases[1]["expected_escalation"] is False
-    assert cases[2]["expected_escalation"] is False
+    assert cases[2]["interleavings"] == [
+        {
+            "commit_order": ["acknowledge", "sla_job"],
+            "acknowledged_at_at_job": "2026-11-02T09:45:00Z",
+            "expected_escalation_records": 0,
+        },
+        {
+            "commit_order": ["sla_job", "acknowledge"],
+            "acknowledged_at_at_job": None,
+            "expected_escalation_records": 1,
+        },
+    ]
