@@ -56,7 +56,7 @@ Với ID incident/file không thuộc phạm vi xem của người dùng, luôn 
 
 **Quyết định demo:** dùng opaque bearer token cho API người dùng. Login tạo token ngẫu nhiên, chỉ trả bản gốc một lần; backend lưu **hash** token, `user_id`, `expires_at`, `revoked_at`, `created_at` trong bảng session. Token có TTL 8 giờ; không có refresh endpoint. Frontend giữ token trong bộ nhớ ứng dụng, không lưu `localStorage`, `sessionStorage`, cookie hoặc log. Tải lại trang phải đăng nhập lại. Logout thu hồi session; vô hiệu user làm mọi session không còn hiệu lực. Với bearer header, trình duyệt không tự gửi credential như cookie nên bản demo không dùng CSRF token. Mật khẩu được băm bằng thuật toán password hashing phù hợp (Argon2id được đề xuất), không lưu hay trả plaintext.
 
-Header cho endpoint người dùng: `Authorization: Bearer <token>`. `GET /auth/me` là nguồn thông tin role/department cho UI, nhưng backend luôn kiểm tra lại trên từng request. Vai trò wire: `reporter`, `handler`, `department_manager`, `administrator`. Admin **không mặc định** đọc được incident/file.
+Header cho endpoint người dùng: `Authorization: Bearer <token>`. `GET /auth/me` là nguồn thông tin role/department cho UI, nhưng backend luôn kiểm tra lại trên từng request. Vai trò wire: `reporter`, `handler`, `department_manager`, `administrator`. Administrator có quyền đọc và thao tác trên mọi incident/file, không bị giới hạn bởi bộ phận, người báo hoặc người được giao. Quyền này không bỏ qua kiểm tra dữ liệu, trạng thái, `expected_version`, lý do hay audit.
 
 | Method | Path | Ai gọi | Request | Thành công |
 | --- | --- | --- | --- | --- |
@@ -70,17 +70,17 @@ Header cho endpoint người dùng: `Authorization: Bearer <token>`. `GET /auth/
 
 | Hành động | Reporter | Handler | Department manager | Administrator |
 | --- | --- | --- | --- | --- |
-| Tạo/xem/bổ sung báo cáo | Của mình | Của mình khi là reporter; xem incident được giao | Xem incident của bộ phận | Không mặc định |
-| Xem/tạo comment công khai | Của mình | Incident được giao | Incident của bộ phận | Không mặc định |
-| Xem/tạo ghi chú nội bộ | Không | Incident được giao | Incident của bộ phận | Không mặc định |
-| Download/upload bằng chứng | Của incident mình được xem | Incident được giao | Incident của bộ phận | Không mặc định |
-| Phân công/đổi priority/đóng/mở lại | Không | Không | Incident của bộ phận, có lý do | Không mặc định |
-| Nhận và giải quyết | Không | Incident được giao | Incident của bộ phận | Không mặc định |
+| Tạo/xem/bổ sung báo cáo | Của mình | Của mình khi là reporter; xem incident được giao | Xem incident của bộ phận | Tạo cho mình; xem/bổ sung mọi incident |
+| Xem/tạo comment công khai | Của mình | Incident được giao | Incident của bộ phận | Mọi incident |
+| Xem/tạo ghi chú nội bộ | Không | Incident được giao | Incident của bộ phận | Mọi incident |
+| Download/upload bằng chứng | Của incident mình được xem | Incident được giao | Incident của bộ phận | Mọi incident |
+| Phân công/đổi priority/đóng/mở lại | Không | Không | Incident của bộ phận, có lý do | Mọi incident, có lý do |
+| Nhận và giải quyết | Không | Incident được giao | Incident của bộ phận | Mọi incident |
 | Quản lý user/department/rule/event lỗi | Không | Không | Không | Có audit |
 
-Manager có thể chuyển incident sang bộ phận khác chỉ khi đang quản lý bộ phận hiện tại; bộ phận đích phải hợp lệ. Handler mất quyền thao tác khi assignment chuyển sang người khác. Comment `public` chỉ là hiển thị cho các vai trò **có quyền đối với incident**, không phải endpoint công khai.
+Manager có thể chuyển incident sang bộ phận khác chỉ khi đang quản lý bộ phận hiện tại; administrator có thể làm việc này với mọi bộ phận. Bộ phận đích phải hợp lệ. Handler mất quyền thao tác khi assignment chuyển sang người khác. Comment `public` chỉ là hiển thị cho các vai trò **có quyền đối với incident**, không phải endpoint công khai. Mọi thao tác ghi của administrator trên incident/file/comment phải ghi actor và audit như các vai trò khác.
 
-Hàng đợi `triage_required` dùng một bộ phận nội bộ `triage_queue` với manager demo được chỉ định; đó **không phải** bộ phận xử lý cuối. Incident vẫn ở `reported`, `priority=null` và chưa có handler cho đến khi manager phân công đúng bộ phận. Manager của hàng đợi này được gọi `/assign` để chuyển khỏi triage; không cần quyền admin xem toàn bộ incident.
+Hàng đợi `triage_required` dùng một bộ phận nội bộ `triage_queue` với manager demo được chỉ định; đó **không phải** bộ phận xử lý cuối. Incident vẫn ở `reported`, `priority=null` và chưa có handler cho đến khi manager hoặc administrator phân công đúng bộ phận. Cả manager của hàng đợi và administrator được gọi `/assign` để chuyển khỏi triage.
 
 ## 3. Incident và form
 
@@ -153,7 +153,7 @@ Schema lưu trữ do N2 chốt ở [incident data model](incident-data-model.md)
 | --- | --- | --- | --- | --- |
 | GET | `/incidents` | User đã đăng nhập, giới hạn theo bản ghi | `limit`, `cursor`, `status`, `category`, `priority`, `department_id`, `triage_required`, `overdue` (filter chỉ trả tập con được xem) | 200: `{items: IncidentSummary[], next_cursor: string|null}` |
 | GET | `/incidents/{incident_id}` | Người được xem bản ghi | Không body | 200: `IncidentResponse` theo phạm vi quyền |
-| POST | `/incidents/{incident_id}/supplements` | Reporter của incident khi chưa `resolved/closed` | `{ "text": string(1..2000), "expected_version": int }` | 201: `{id, created_at, incident_version}`; tạo history public |
+| POST | `/incidents/{incident_id}/supplements` | Reporter của incident hoặc administrator khi chưa `resolved/closed` | `{ "text": string(1..2000), "expected_version": int }` | 201: `{id, created_at, incident_version}`; tạo history public |
 | GET | `/incidents/{incident_id}/history` | Người được xem bản ghi | `limit`, `cursor` | 200: `{items: HistoryItem[], next_cursor}`; reporter chỉ thấy event public |
 
 `IncidentSummary`: `id`, `version`, `category`, `title`, `status`, `priority`, `triage_required`, `department_id` (nếu được phép), `reported_at`, `acknowledgment_deadline_at`, `overdue`. `overdue` chỉ đúng nếu chưa acknowledged và đã qua deadline; `triage_required` có cảnh báo review riêng, không giả SLA P1. `HistoryItem`: `id`, `action`, `actor_display_name` hoặc `"Hệ thống"`, `created_at`, `visibility`, `details` đã lọc theo quyền. Cursor phải ổn định khi thêm incident mới giữa hai trang.
@@ -164,7 +164,7 @@ Schema lưu trữ do N2 chốt ở [incident data model](incident-data-model.md)
 
 | Method | Path | Quyền | Request | Response |
 | --- | --- | --- | --- | --- |
-| POST | `/incidents/{incident_id}/attachments` | Reporter của incident chưa đóng; handler/manager trong phạm vi | Multipart `file` + `expected_version`; tối đa 5 file/incident, 10 MiB/file; chỉ PDF/PNG/JPEG sau khi kiểm tra nội dung thật | 201: `{id, original_name, content_type, size_bytes, created_at, incident_version}` |
+| POST | `/incidents/{incident_id}/attachments` | Reporter của incident chưa đóng; handler/manager trong phạm vi; administrator với mọi incident chưa đóng | Multipart `file` + `expected_version`; tối đa 5 file/incident, 10 MiB/file; chỉ PDF/PNG/JPEG sau khi kiểm tra nội dung thật | 201: `{id, original_name, content_type, size_bytes, created_at, incident_version}` |
 | GET | `/incidents/{incident_id}/attachments` | Người được xem file của incident | Không body | 200: `{items: AttachmentSummary[]}` |
 | GET | `/incidents/{incident_id}/attachments/{attachment_id}/download` | Người được xem file của incident | Không body | 200 stream; `Cache-Control: no-store`; tên file an toàn |
 
@@ -177,7 +177,7 @@ Upload sai không để file mồ côi. Server tạo tên lưu ngẫu nhiên, kh
 | GET | `/incidents/{incident_id}/comments` | Người được xem incident | `limit`, `cursor` | 200: `{items: Comment[], next_cursor}` đã lọc visibility |
 | POST | `/incidents/{incident_id}/comments` | Reporter/handler/manager theo phạm vi | `{ "body": string(1..2000), "visibility": "public"|"internal", "expected_version": int }` | 201: `Comment` + `incident_version` |
 
-Reporter chỉ tạo `public`, không xem/tạo `internal`; handler/manager tạo cả hai. Comment hiển thị dưới dạng text đã escape, không render HTML người dùng nhập.
+Reporter chỉ tạo `public`, không xem/tạo `internal`; handler/manager trong phạm vi và administrator trên mọi incident tạo cả hai. Comment hiển thị dưới dạng text đã escape, không render HTML người dùng nhập.
 
 ### Hành động trên incident
 
@@ -185,24 +185,24 @@ Mỗi POST dưới đây bắt buộc `expected_version`; backend kiểm tra quy
 
 | Method | Path | Quyền | Body bắt buộc | Điều kiện |
 | --- | --- | --- | --- | --- |
-| POST | `/incidents/{id}/assign` | Manager của bộ phận hiện tại | `department_id`, `handler_id` hoặc null, `reason`, `expected_version` | Department/handler hợp lệ; `reported` chuyển `assigned`; phân công lại không tự reset `acknowledged_at`. |
-| POST | `/incidents/{id}/acknowledge` | Handler được giao hoặc manager cùng bộ phận | `expected_version` | Chỉ `assigned → in_progress`; ghi `acknowledged_at` một lần. |
-| POST | `/incidents/{id}/priority` | Manager của bộ phận | `priority`, `reason`, `expected_version` | Priority p1/p2/p3; tính lại deadline từ `reported_at` nếu chưa tiếp nhận, giữ escalation/history cũ. |
-| POST | `/incidents/{id}/transitions` | Handler được giao hoặc manager theo bảng bên dưới | `target_status`, `reason` hoặc `resolution` theo transition, `expected_version` | Chỉ các cạnh hợp lệ; trả 409 khi cạnh sai. |
-| POST | `/incidents/{id}/disposition` | Manager của bộ phận | `kind`: `duplicate`/`invalid`; `reason`; `duplicate_of_id` nếu trùng; `expected_version` | Lưu disposition/history và đóng incident; không xóa bản ghi. |
+| POST | `/incidents/{id}/assign` | Manager của bộ phận hiện tại hoặc administrator | `department_id`, `handler_id` hoặc null, `reason`, `expected_version` | Department/handler hợp lệ; `reported` chuyển `assigned`; phân công lại không tự reset `acknowledged_at`. |
+| POST | `/incidents/{id}/acknowledge` | Handler được giao, manager cùng bộ phận hoặc administrator | `expected_version` | Chỉ `assigned → in_progress`; ghi `acknowledged_at` một lần. |
+| POST | `/incidents/{id}/priority` | Manager của bộ phận hoặc administrator | `priority`, `reason`, `expected_version` | Priority p1/p2/p3; tính lại deadline từ `reported_at` nếu chưa tiếp nhận, giữ escalation/history cũ. |
+| POST | `/incidents/{id}/transitions` | Handler được giao, manager theo bảng bên dưới hoặc administrator | `target_status`, `reason` hoặc `resolution` theo transition, `expected_version` | Chỉ các cạnh hợp lệ; trả 409 khi cạnh sai. |
+| POST | `/incidents/{id}/disposition` | Manager của bộ phận hoặc administrator | `kind`: `duplicate`/`invalid`; `reason`; `duplicate_of_id` nếu trùng; `expected_version` | Lưu disposition/history và đóng incident; không xóa bản ghi. |
 
 | Từ → Đến | Ai được làm | Field thêm |
 | --- | --- | --- |
-| `in_progress → resolved` | Handler được giao hoặc manager | `resolution` không rỗng |
-| `resolved → closed` | Manager | `reason` xác nhận hoặc null |
-| `resolved → in_progress` | Manager | `reason` bắt buộc |
-| `closed → in_progress` | Manager | `reason` bắt buộc |
+| `in_progress → resolved` | Handler được giao, manager hoặc administrator | `resolution` không rỗng |
+| `resolved → closed` | Manager hoặc administrator | `reason` xác nhận hoặc null |
+| `resolved → in_progress` | Manager hoặc administrator | `reason` bắt buộc |
+| `closed → in_progress` | Manager hoặc administrator | `reason` bắt buộc |
 
 `reported → assigned` qua `/assign` hoặc API nội bộ; `assigned → in_progress` qua `/acknowledge`, không gọi `/transitions`. `disposition` chỉ dùng khi incident chưa `closed`. Các timestamp cũ/history không bị xóa khi mở lại; lần mở lại không tự tạo SLA tiếp nhận mới. Ghi nhận xung đột đồng thời bằng version check trong câu lệnh cập nhật/transaction, không chỉ kiểm tra ở frontend.
 
 ## 5. Quản trị tối thiểu và theo dõi lỗi
 
-Các endpoint dưới đây chỉ cho `administrator`, ghi audit. Có thể làm CLI quản trị tương đương nếu nhóm chọn bỏ UI, nhưng kết quả và quyền phải giống hợp đồng. Admin không nhờ các endpoint này để xem incident/file.
+Các endpoint dưới đây chỉ cho `administrator`, ghi audit. Có thể làm CLI quản trị tương đương nếu nhóm chọn bỏ UI, nhưng kết quả và quyền phải giống hợp đồng. Administrator dùng các endpoint incident/file thông thường để xem và thao tác trên mọi bản ghi.
 
 | Method | Path | Request / ý nghĩa | Response |
 | --- | --- | --- | --- |

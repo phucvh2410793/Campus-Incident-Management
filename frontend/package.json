@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:mock": "node --experimental-strip-types test-mock-api.ts",
     "preview": "vite preview"
   },
   "dependencies": {

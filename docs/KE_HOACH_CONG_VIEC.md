@@ -29,7 +29,7 @@ Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, AP
 | W3 · 26/10/2026–01/11/2026 | Làm login, băm mật khẩu và rate limit; trả đúng lỗi 401/429 theo contract. | Test login đúng/sai/khóa/rate limit đạt bằng API thật. |
 | W4 · 02/11/2026–08/11/2026 | Làm bearer middleware, /auth/me, logout, hạn phiên và thu hồi khi khóa user. | Token chỉ lưu hash; hết hạn/logout/khóa đều trả 401. |
 | W5 · 09/11/2026–15/11/2026 | Đóng gói policy role/owner/department/assignment dùng chung và che 404 khi ngoài phạm vi. | Có test policy qua fixture, các router khác gọi cùng interface. |
-| W6 · 16/11/2026–22/11/2026 | Làm quản trị tối thiểu user/department/rule bằng CLI hoặc API có audit. | Tạo/khóa user demo không sửa DB tay; admin không tự xem incident. |
+| W6 · 16/11/2026–22/11/2026 | Làm quản trị tối thiểu user/department/rule bằng CLI hoặc API có audit. | Tạo/khóa user demo không sửa DB tay; admin xem và thao tác mọi incident theo contract, có audit. |
 | W7 · 23/11/2026–29/11/2026 | Ghép policy vào router incident, file, comment và thao tác xử lý tại mốc tích hợp. | Ma trận quyền thực tế đạt; truy cập chéo ID trả 404/403 đúng contract. |
 | W8 · 30/11/2026–06/12/2026 | Rà lỗi 401/403/404, thu hồi session và tài khoản đa vai trò trên dữ liệu seed lớn. | Test âm tính theo từng vai trò và bộ phận đều đạt. |
 | W9 · 07/12/2026–13/12/2026 | Cố định hợp đồng auth/permission, cập nhật OpenAPI và test tương thích frontend. | UI login/route chạy API thật; không còn endpoint giả trong luồng auth. |
