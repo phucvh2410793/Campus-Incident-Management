@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "rule_version": "demo-v1",
+  "classification_cases": [
+    {
+      "test_id": "T01",
+      "request": {"category": "water_leak", "answers": {"leak_amount": "small", "near_electricity": "no"}},
+      "expected": {"rule_id": "R07", "rule_version": "demo-v1", "severity": "low", "priority": "p3", "department": "Cơ sở vật chất", "reason": "Chưa có dấu hiệu tăng cấp", "triage_required": false, "safety_flags": []}
+    },
+    {
+      "test_id": "T02",
+      "request": {"category": "water_leak", "answers": {"leak_amount": "small", "near_electricity": "yes"}},
+      "expected": {"rule_id": "R03", "rule_version": "demo-v1", "severity": "high", "priority": "p1", "department": "Cơ sở vật chất", "reason": "Nước gần điện cần ưu tiên cao; gắn cờ an toàn", "triage_required": false, "safety_flags": ["near_electricity"]}
+    },
+    {
+      "test_id": "T03",
+      "request": {"category": "electrical_hazard", "answers": {"exposed_wire": "unknown", "smoke_or_sparks": "yes"}},
+      "expected": {"rule_id": "R01", "rule_version": "demo-v1", "severity": "critical", "priority": "p1", "department": "Điện và an toàn", "reason": "Dấu hiệu nguy hiểm tức thời", "triage_required": false, "safety_flags": []}
+    },
+    {
+      "test_id": "T04",
+      "request": {"category": "phishing", "answers": {"interaction": "none", "channel": "email"}},
+      "expected": {"rule_id": "R08", "rule_version": "demo-v1", "severity": "low", "priority": "p3", "department": "IT/Security", "reason": "Chưa ghi nhận tương tác", "triage_required": false, "safety_flags": []}
+    },
+    {
+      "test_id": "T05",
+      "request": {"category": "phishing", "answers": {"interaction": "entered_information", "channel": "email"}},
+      "expected": {"rule_id": "R02", "rule_version": "demo-v1", "severity": "high", "priority": "p1", "department": "IT/Security", "reason": "Nguy cơ lộ thông tin", "triage_required": false, "safety_flags": []}
+    },
+    {
+      "test_id": "T06",
+      "request": {"category": "water_leak", "answers": {"leak_amount": "unknown", "near_electricity": "unknown"}},
+      "expected": {"rule_id": null, "rule_version": "demo-v1", "severity": null, "priority": null, "department": "Hàng đợi phân loại thủ công", "reason": "Thiếu dữ liệu hoặc không khớp quy tắc; cần phân loại thủ công", "triage_required": true, "safety_flags": []}
+    }
+  ],
+  "sla_cases": [
+    {
+      "test_id": "T10",
+      "priority": "p1",
+      "reported_at": "2026-11-02T09:30:00Z",
+      "deadline_at": "2026-11-02T09:45:00Z",
+      "job_at": "2026-11-02T09:45:30Z",
+      "acknowledged_at": null,
+      "expected_escalation": true
+    },
+    {
+      "test_id": "T11",
+      "priority": "p1",
+      "reported_at": "2026-11-02T09:30:00Z",
+      "deadline_at": "2026-11-02T09:45:00Z",
+      "job_at": "2026-11-02T09:45:30Z",
+      "acknowledged_at": "2026-11-02T09:40:00Z",
+      "expected_escalation": false
+    },
+    {
+      "test_id": "T12",
+      "priority": "p1",
+      "reported_at": "2026-11-02T09:30:00Z",
+      "deadline_at": "2026-11-02T09:45:00Z",
+      "job_at": "2026-11-02T09:45:00Z",
+      "interleavings": [
+        {"commit_order": ["acknowledge", "sla_job"], "acknowledged_at_at_job": "2026-11-02T09:45:00Z", "expected_escalation_records": 0},
+        {"commit_order": ["sla_job", "acknowledge"], "acknowledged_at_at_job": null, "expected_escalation_records": 1}
+      ],
+      "expected_max_escalation_records": 1
+    }
+  ]
+}

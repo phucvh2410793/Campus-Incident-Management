@@ -46,6 +46,8 @@
 
 Mỗi mảng viết test cho phần mình ngay khi phát triển bằng fixture/mock từ API contract; không đợi đến W10 mới bắt đầu kiểm thử. Ở các ca xuyên nhiều mảng, người chịu trách nhiệm chính gom bằng chứng, còn từng mảng sửa lỗi thuộc phần mình.
 
+Fixture độc lập T01–T06 và T10–T12 cho N2/N4/N7 ở [N3 W1](n3-fixtures.md).
+
 | Ca | Chịu trách nhiệm chính | Mảng phối hợp |
 | --- | --- | --- |
 | T01–T06 · form, rule, fallback | N3 · phân loại/triage | N2 · dữ liệu đầu vào; N6 · form; N5 · thông báo |
