@@ -1,36 +1,50 @@
 
+import json
+from pathlib import Path
+from uuid import UUID
+
 import pytest
 
 from app.auth.policy import Principal, RolePolicy
 
-
-@pytest.fixture
-def policy():
-    return RolePolicy()
+FIXTURE = json.loads(
+    (Path(__file__).parents[2] / "docs" / "fixtures" / "principals.json").read_text(
+        encoding="utf-8"
+    )
+)
 
 
 @pytest.mark.parametrize(
-    ("role", "action", "expected"),
+    ("action", "allowed_roles"),
     [
-        ("reporter", "report_incident", True),
-        ("handler", "report_incident", True),
-        ("department_manager", "report_incident", True),
-        ("administrator", "report_incident", True),
-        ("reporter", "manage_users", False),
-        ("handler", "manage_users", False),
-        ("department_manager", "manage_users", False),
-        ("administrator", "manage_users", True),
-        ("reporter", "manage_roles", False),
-        ("administrator", "manage_roles", True),
-        ("unknown_role", "manage_users", False),
-        ("reporter", "unknown_action", False),
+        ("report_incident", {"reporter", "handler", "department_manager"}),
+        ("view_assigned_incidents", {"handler", "department_manager"}),
+        ("manage_department", {"administrator"}),
+        ("manage_users", {"administrator"}),
+        ("manage_roles", {"administrator"}),
     ],
 )
-def test_role_permissions(policy, role, action, expected):
-    principal = Principal(
-        user_id="test-user",
-        role=role,
-        department_id=None,
-    )
+@pytest.mark.parametrize("principal_data", FIXTURE["principals"], ids=lambda item: item["role"])
+def test_role_permissions(principal_data, action, allowed_roles):
+    principal = Principal(**principal_data)
+    assert RolePolicy().allows(principal, action) is (principal.role in allowed_roles)
 
-    assert policy.allows(principal, action) is expected
+
+def test_shared_principal_fixture_is_complete():
+    assert FIXTURE["schema_version"] == 1
+    departments = {item["id"] for item in FIXTURE["departments"]}
+    assert len(departments) == 2
+    assert {item["role"] for item in FIXTURE["principals"]} == {
+        "reporter", "handler", "department_manager", "administrator"
+    }
+    assert len({item["user_id"] for item in FIXTURE["principals"]}) == 4
+    for item in FIXTURE["principals"]:
+        UUID(item["user_id"])
+        if item["department_id"] is not None:
+            assert item["department_id"] in departments
+
+
+def test_unknown_role_or_action_is_denied():
+    policy = RolePolicy()
+    assert not policy.allows(Principal("id", "unknown_role", None), "manage_users")
+    assert not policy.allows(Principal("id", "reporter", None), "unknown_action")

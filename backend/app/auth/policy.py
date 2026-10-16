@@ -1,12 +1,11 @@
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Annotated, Protocol
 
 from fastapi import Depends, HTTPException, status
 
 from app.auth.dependencies import get_current_user
 from app.models import User
-
 
 ROLES = {
     "reporter",
@@ -36,9 +35,9 @@ class RolePolicy:
     """Basic role-based access control policy."""
 
     permissions = {
-        "report_incident": {"reporter", "handler", "department_manager", "administrator"},
-        "view_assigned_incidents": {"handler", "department_manager", "administrator"},
-        "manage_department": {"department_manager", "administrator"},
+        "report_incident": {"reporter", "handler", "department_manager"},
+        "view_assigned_incidents": {"handler", "department_manager"},
+        "manage_department": {"administrator"},
         "manage_users": {"administrator"},
         "manage_roles": {"administrator"},
     }
@@ -52,7 +51,7 @@ class RolePolicy:
 
 
 def get_principal(
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> Principal:
     return Principal(
         user_id=str(current_user.id),
@@ -73,7 +72,7 @@ def require_roles(*allowed_roles: str):
         raise ValueError(f"Unknown roles: {sorted(invalid_roles)}")
 
     def check_role(
-        current_user: User = Depends(get_current_user),
+        current_user: Annotated[User, Depends(get_current_user)],
     ) -> User:
         if current_user.role not in allowed_roles:
             raise HTTPException(
@@ -91,7 +90,7 @@ def require_permission(action: str):
     policy = RolePolicy()
 
     def check_permission(
-        principal: Principal = Depends(get_principal),
+        principal: Annotated[Principal, Depends(get_principal)],
     ) -> Principal:
         if not policy.allows(principal, action):
             raise HTTPException(
