@@ -1,13 +1,13 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
 from app.auth.models import Session as UserSession
 from app.auth.security import hash_session_token
-from app.models import User
 
 
 def test_login_success(client, test_user):
+    before_login = datetime.now(UTC)
     response = client.post(
         "/api/v1/auth/login",
         json={
@@ -21,7 +21,19 @@ def test_login_success(client, test_user):
     data = response.json()
     assert data["token_type"] == "bearer"
     assert data["access_token"]
-    assert "expires_at" in data
+    assert (
+        before_login + timedelta(hours=8)
+        <= datetime.fromisoformat(data["expires_at"])
+        <= datetime.now(UTC) + timedelta(hours=8)
+    )
+    assert data["user"] == {
+        "id": str(test_user.id),
+        "email": test_user.email,
+        "display_name": test_user.display_name,
+        "role": "reporter",
+        "department_id": None,
+        "is_active": True,
+    }
 
 
 def test_login_wrong_password(client, test_user):
@@ -121,7 +133,7 @@ def test_expired_session_is_rejected(
     session = UserSession(
         user_id=test_user.id,
         token_hash=hash_session_token(token),
-        expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        expires_at=datetime.now(UTC) - timedelta(hours=1),
     )
 
     db_session.add(session)
@@ -147,7 +159,7 @@ def test_inactive_user_cannot_use_existing_token(
     session = UserSession(
         user_id=test_user.id,
         token_hash=hash_session_token(token),
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
 
     db_session.add(session)
@@ -194,9 +206,7 @@ def test_session_stores_token_hash_not_plaintext(
     token = response.json()["access_token"]
 
     session = db_session.scalar(
-        select(UserSession).where(
-            UserSession.token_hash == hash_session_token(token)
-        )
+        select(UserSession).where(UserSession.token_hash == hash_session_token(token))
     )
 
     assert session is not None

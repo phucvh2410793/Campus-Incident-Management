@@ -4,14 +4,14 @@ Campus Incident Management là dự án nhóm xây dựng nền tảng web tiế
 
 Tên đề tài trong proposal: **Campus Incident Management**. Chuyên ngành: **Cyber Security**, University of Science and Technology of Hanoi (USTH).
 
-> **Trạng thái:** Đã có nền móng phát triển: React/TypeScript, FastAPI health API, SQLAlchemy/Alembic cho users/departments và Docker Compose. Chưa triển khai đăng nhập, incident, rules, SLA hoặc workflow nghiệp vụ. Phạm vi nghiệp vụ bên dưới vẫn là thiết kế đề xuất.
+> **Trạng thái W1:** Đã có đăng nhập/session và RolePolicy, model và fixture incident, rule/SLA độc lập, hợp đồng workflow/event, wireframe và mock API N6–N7. Incident/file, workflow và outbox chưa có API hoặc migration nghiệp vụ; các phần đó thuộc những tuần tiếp theo. Docker Compose hiện chạy PostgreSQL và migration identity/session.
 
 ## Tài liệu dự án
 
 - [Bảng phân công việc làm mỗi tuần](docs/KE_HOACH_CONG_VIEC.md)
 - [Thiết lập và chạy dự án](docs/development.md)
 - [Kiến trúc](docs/architecture.md) · [Yêu cầu](docs/requirements.md) · [API contract](docs/api-contract.md)
-- [Đặc tả nghiệp vụ phần A](docs/phan-a-yeu-cau-nghiep-vu.md)
+- [Yêu cầu nghiệp vụ](docs/business-requirements.md)
 - [Kế hoạch kiểm tra](docs/test-plan.md)
 - [Bảo mật](SECURITY.md)
 - [Workflow n8n mẫu](workflows/README.md)
@@ -59,7 +59,7 @@ MVP tiếp nhận **báo cáo do người dùng gửi**. Việc tự phát hiệ
 | Reporter | Tạo báo cáo, xem báo cáo của mình, bổ sung thông tin, xem cập nhật được phép công khai |
 | Handler | Xem và xử lý sự cố được giao; ghi chú nội bộ, xác nhận tiếp nhận và đề xuất giải quyết |
 | Department Manager | Xem sự cố của bộ phận, phân công lại, điều chỉnh ưu tiên có lý do, xác nhận đóng hoặc mở lại |
-| Administrator | Quản lý tài khoản, bộ phận, cấu hình hệ thống và quy tắc; quyền đọc dữ liệu sự cố phải được cấp rõ ràng |
+| Administrator | Quản lý hệ thống; xem và thao tác trên mọi incident/file theo API contract, vẫn phải tuân thủ version, trạng thái và audit |
 
 Backend phải kiểm tra quyền trên từng bản ghi và file đính kèm. Việc ẩn nút trên giao diện không thay thế kiểm tra quyền. Người báo không được xem ghi chú nội bộ hoặc nội dung của báo cáo khác.
 
@@ -88,7 +88,7 @@ flowchart TD
 | Assigned | Đã có bộ phận hoặc nhân viên phụ trách | Người xử lý xác nhận tiếp nhận để chuyển sang In Progress |
 | In Progress | Đã tiếp nhận và đang xử lý | Có mô tả kết quả xử lý để chuyển sang Resolved |
 | Resolved | Người xử lý đã ghi kết quả | Quản lý xác nhận để chuyển sang Closed; trả lại In Progress nếu chưa đạt |
-| Closed | Quá trình xử lý đã được xác nhận hoàn tất | Chỉ quản lý được mở lại về In Progress, kèm lý do |
+| Closed | Quá trình xử lý đã được xác nhận hoàn tất | Quản lý hoặc administrator được mở lại về In Progress, kèm lý do |
 
 Mỗi lần chuyển trạng thái phải lưu người thực hiện, thời gian, trạng thái trước/sau và lý do khi cần. Sự cố bị báo trùng, không hợp lệ hoặc không xác định được bộ phận cần quy trình xử lý riêng được nhóm thống nhất, có lịch sử và người chịu trách nhiệm.
 
@@ -110,7 +110,7 @@ Mỗi lần chuyển trạng thái phải lưu người thực hiện, thời gi
 
 - SLA tiếp nhận bắt đầu tại `reported_at`, kết thúc tại `acknowledged_at` khi người xử lý nhận sự cố.
 - `assigned_at` không đồng nghĩa với đã tiếp nhận.
-- Baseline demo đặt ngưỡng P1 = 15 phút, P2 = 2 giờ, P3 = 8 giờ trong [đặc tả phần A](docs/phan-a-yeu-cau-nghiep-vu.md); đây không phải cam kết phản hồi của trường.
+- Baseline demo đặt ngưỡng P1 = 15 phút, P2 = 2 giờ, P3 = 8 giờ trong [yêu cầu nghiệp vụ](docs/business-requirements.md); đây không phải cam kết phản hồi của trường.
 - MVP đề xuất tính thời gian liên tục; SLA theo giờ làm việc để giai đoạn mở rộng.
 - n8n kiểm tra các bản ghi đủ điều kiện, tạo escalation một lần cho mỗi mức và thông báo đầu mối phụ trách.
 - Workflow phải xử lý trường hợp người xử lý tiếp nhận đúng lúc job kiểm tra SLA đang chạy.
@@ -165,9 +165,9 @@ Phương án độ tin cậy đề xuất: lưu incident cùng sự kiện trong
 ```text
 .
 ├── backend/
-│   ├── app/                 # FastAPI, config, DB và identity models
-│   ├── migrations/          # Alembic và revision đầu tiên
-│   ├── tests/               # Health/CORS tests
+│   ├── app/                 # FastAPI, auth, model và hợp đồng W1
+│   ├── migrations/          # Alembic identity/session
+│   ├── tests/               # Unit, contract và auth API tests
 │   ├── requirements*.txt    # Dependencies cố định
 │   └── Dockerfile
 ├── frontend/                # React + TypeScript + Vite
@@ -199,9 +199,9 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-docker.ps1
 | Database readiness | http://localhost:8000/api/v1/health/ready |
 | n8n | http://localhost:5678 |
 
-PostgreSQL được truy cập trên máy qua `localhost:15432`; cổng trong mạng Docker vẫn là `5432`. Có thể đổi cổng máy qua `POSTGRES_PORT` trong `.env`. Compose tự chạy migration trước backend. Truy cập n8n lần đầu để tạo owner account; chưa có tài khoản demo hoặc đăng nhập ứng dụng. Frontend hiện hiển thị trạng thái HTTP API, chưa có form báo cáo.
+PostgreSQL được truy cập trên máy qua `localhost:15432`; cổng trong mạng Docker vẫn là `5432`. Có thể đổi cổng máy qua `POSTGRES_PORT` trong `.env`. Compose tự chạy migration trước backend. Truy cập n8n lần đầu để tạo owner account. Backend đã có API đăng nhập/session nhưng chưa seed tài khoản demo; frontend W1 dùng wireframe và mock API, chưa nối luồng incident thật.
 
-**Đã xác minh Docker local:** build và khởi động thành công; PostgreSQL, backend, frontend và n8n đều healthy; migration hoàn tất với exit code 0; `alembic check` xác nhận schema khớp model. HTTP health, proxy frontend và kết nối n8n → backend đạt. Workflow health check mẫu đã import và chạy thành công. Nghiệp vụ incident/auth chưa triển khai.
+**Đã xác minh Docker local:** PostgreSQL, backend, frontend và n8n healthy; image backend/frontend W1 build thành công. Migration identity/session chạy trên database test riêng và toàn bộ test backend qua. `alembic check` hiện liệt kê bảng incident/evidence/idempotency chưa có trong DB vì N2 W1 mới chốt model; migration các bảng này thuộc W2.
 
 Xem [hướng dẫn phát triển](docs/development.md) để chạy frontend/backend trực tiếp bằng Node.js 24/Python 3.14, kiểm thử, cấu hình proxy và xử lý lỗi. Compose hiện dùng dev server, chỉ dành cho localhost.
 

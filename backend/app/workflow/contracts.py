@@ -64,10 +64,10 @@ class WorkflowViolation(ValueError):
 
 # Explicit endpoint boundaries: assign/acknowledge are not generic transitions.
 TRANSITIONS = {
-    (Status.IN_PROGRESS, Status.RESOLVED): ("handler", "department_manager"),
-    (Status.RESOLVED, Status.CLOSED): ("department_manager",),
-    (Status.RESOLVED, Status.IN_PROGRESS): ("department_manager",),
-    (Status.CLOSED, Status.IN_PROGRESS): ("department_manager",),
+    (Status.IN_PROGRESS, Status.RESOLVED): ("handler", "department_manager", "administrator"),
+    (Status.RESOLVED, Status.CLOSED): ("department_manager", "administrator"),
+    (Status.RESOLVED, Status.IN_PROGRESS): ("department_manager", "administrator"),
+    (Status.CLOSED, Status.IN_PROGRESS): ("department_manager", "administrator"),
 }
 
 
@@ -77,7 +77,7 @@ def validate_transition(current: Status, role: str, request: TransitionRequest) 
     This pure function does not provide atomic version checks or write timestamps.
     Those belong in the future repository transaction.
     """
-    if role not in {"handler", "department_manager"}:
+    if role not in {"handler", "department_manager", "administrator"}:
         raise WorkflowViolation("forbidden", 403)
     roles = TRANSITIONS.get((current, request.target_status))
     if roles is None:

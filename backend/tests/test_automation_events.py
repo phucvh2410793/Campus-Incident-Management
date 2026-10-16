@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -202,13 +202,13 @@ def test_event_publisher_idempotency():
     publisher.publish(event)
     assert len(publisher) == 1
 
-    # Publishing an event with the same ID but conflicting payload must raise IdempotencyConflictError
+    # A repeated event ID with conflicting payload must raise IdempotencyConflictError.
     conflicting_event = EventEnvelope(
         event_id=event.event_id,  # Same event_id
         event_type=EventType.INCIDENT_ASSIGNED,  # Different type!
         incident_id=SAMPLE_INCIDENT_ID,
         request_id=SAMPLE_REQUEST_ID,
-        occurred_at=datetime.now(timezone.utc),
+        occurred_at=datetime.now(UTC),
     )
     with pytest.raises(IdempotencyConflictError):
         publisher.publish(conflicting_event)
@@ -216,7 +216,12 @@ def test_event_publisher_idempotency():
 
 def test_json_fixtures_match_schema():
     fixtures_dir = Path(__file__).resolve().parent.parent.parent / "workflows" / "events"
-    json_files = ["incident_reported.json", "incident_assigned.json", "incident_priority_changed.json", "sla_escalated.json"]
+    json_files = [
+        "incident_reported.json",
+        "incident_assigned.json",
+        "incident_priority_changed.json",
+        "sla_escalated.json",
+    ]
 
     for file_name in json_files:
         path = fixtures_dir / file_name

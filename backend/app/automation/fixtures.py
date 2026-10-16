@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.automation.schemas import EventEnvelope, EventType
@@ -14,7 +14,7 @@ SAMPLE_EVENT_PRIORITY_ID = uuid.UUID("b2223333-4444-5555-6666-777788889999")
 SAMPLE_EVENT_ESCALATED_ID = uuid.UUID("c3334444-5555-6666-7777-888899990000")
 SAMPLE_REQUEST_ID = uuid.UUID("9c23fa93-756a-45c7-805b-96d9094b908d")
 
-SAMPLE_TIMESTAMP_UTC = datetime(2026, 11, 2, 9, 30, 0, tzinfo=timezone.utc)
+SAMPLE_TIMESTAMP_UTC = datetime(2026, 11, 2, 9, 30, 0, tzinfo=UTC)
 
 
 def get_fixture_reported_event() -> EventEnvelope:
@@ -35,7 +35,7 @@ def get_fixture_assigned_event() -> EventEnvelope:
         event_id=SAMPLE_EVENT_ASSIGNED_ID,
         event_type=EventType.INCIDENT_ASSIGNED,
         incident_id=SAMPLE_INCIDENT_ID,
-        occurred_at=datetime(2026, 11, 2, 9, 35, 0, tzinfo=timezone.utc),
+        occurred_at=datetime(2026, 11, 2, 9, 35, 0, tzinfo=UTC),
         schema_version=1,
         request_id=SAMPLE_REQUEST_ID,
     )
@@ -47,7 +47,7 @@ def get_fixture_priority_changed_event() -> EventEnvelope:
         event_id=SAMPLE_EVENT_PRIORITY_ID,
         event_type=EventType.INCIDENT_PRIORITY_CHANGED,
         incident_id=SAMPLE_INCIDENT_ID,
-        occurred_at=datetime(2026, 11, 2, 9, 40, 0, tzinfo=timezone.utc),
+        occurred_at=datetime(2026, 11, 2, 9, 40, 0, tzinfo=UTC),
         schema_version=1,
         request_id=SAMPLE_REQUEST_ID,
     )
@@ -59,7 +59,7 @@ def get_fixture_sla_escalated_event() -> EventEnvelope:
         event_id=SAMPLE_EVENT_ESCALATED_ID,
         event_type=EventType.SLA_ESCALATED,
         incident_id=SAMPLE_INCIDENT_ID,
-        occurred_at=datetime(2026, 11, 2, 9, 45, 0, tzinfo=timezone.utc),
+        occurred_at=datetime(2026, 11, 2, 9, 45, 0, tzinfo=UTC),
         schema_version=1,
         request_id=SAMPLE_REQUEST_ID,
     )

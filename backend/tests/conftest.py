@@ -17,16 +17,13 @@ def get_test_database_url() -> str:
 
     if not url:
         raise RuntimeError(
-            "TEST_DATABASE_URL is missing. "
-            "Set it to the campus_incident_test database."
+            "TEST_DATABASE_URL is missing. Set it to the campus_incident_test database."
         )
 
     database_name = url.split("?", 1)[0].rsplit("/", 1)[-1]
 
     if database_name != "campus_incident_test":
-        raise RuntimeError(
-            "Tests must use the campus_incident_test database."
-        )
+        raise RuntimeError("Tests must use the campus_incident_test database.")
 
     return url
 

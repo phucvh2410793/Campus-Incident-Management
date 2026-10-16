@@ -1,19 +1,11 @@
-# Đặc tả Wireframe và Luồng Giao diện — Task N6 & Task N7
+# Wireframe N6–N7
 
-**Dự án:** USTH Campus Incident Management
-**Mốc:** W1 (12/10/2026 – 18/10/2026)
-**Phụ trách:**
-- **N6:** Đỗ Tuấn Kiệt — Giao diện người báo (Reporter)
-- **N7:** Nguyễn Nhật Quang — Giao diện nhân viên & quản lý (Staff & Manager)
+N6 phụ trách giao diện reporter; N7 phụ trách giao diện handler và manager.
+Wireframe dùng [API contract](api-contract.md) và mock API để chạy khi backend
+nghiệp vụ chưa có. Bearer token chỉ nằm trong bộ nhớ ứng dụng.
 
----
+Ví dụ response khi version đã thay đổi:
 
-## 1. Tổng quan kiến trúc giao diện và Mock API
-
-Theo [Kế hoạch công việc](KE_HOACH_CONG_VIEC.md), [API Contract](api-contract.md) và [Đặc tả phần A](phan-a-yeu-cau-nghiep-vu.md):
-- Frontend hoạt động hoàn toàn độc lập với backend trong giai đoạn W1 nhờ tầng **Mock API Adapter** bám sát contract trên dây `/api/v1`.
-- Quản lý phiên làm việc bằng opaque bearer token lưu trong bộ nhớ ứng dụng (in-memory), không lưu `localStorage` / `sessionStorage` để tuân thủ bảo mật.
-- Chuẩn hóa định dạng lỗi nghiệp vụ trên toàn hệ thống:
 ```json
 {
   "error": {
@@ -23,13 +15,11 @@ Theo [Kế hoạch công việc](KE_HOACH_CONG_VIEC.md), [API Contract](api-cont
     "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d"
   }
 }
-`
+```
 
----
+## N6 — Reporter
 
-## 2. Luồng và Wireframe Task N6 (Đỗ Tuấn Kiệt — Giao diện người báo)
-
-### 2.1. Sơ đồ luồng tổng thể người báo (Reporter Flow)
+### Luồng chính
 
 ```mermaid
 flowchart TD
@@ -53,11 +43,9 @@ flowchart TD
     ViewList --> ViewDetail[Xem chi tiết báo cáo GET /incidents/:id]
     ViewDetail --> ViewTimeline[Xem Timeline Public & Trao đổi công khai]
     ViewDetail --> Supplement[Gửi bổ sung thông tin POST /supplements]
-`
+```
 
----
-
-### 2.2. Đặc tả ba form báo cáo MVP & Cảnh báo an toàn
+### Ba form báo cáo
 
 | Loại sự cố | Câu hỏi bắt buộc | Câu hỏi tùy chọn | Cảnh báo khẩn cấp / Hướng dẫn an toàn |
 | :--- | :--- | :--- | :--- |
@@ -65,7 +53,7 @@ flowchart TD
 | **Nguy hiểm điện** (`electrical_hazard`) | - `exposed_wire`: có dây hở (`yes`/`no`/`unknown`)<br>- `smoke_or_sparks`: có khói/tia lửa (`yes`/`no`/`unknown`) | - `equipment`: thiết bị liên quan (chuỗi tối đa 200 ký tự) | **Dấu hiệu nguy hiểm tức thời:** Cảnh báo nổi bật nền đỏ, yêu cầu giữ khoảng cách an toàn, không tự ý ngắt điện nếu không có chuyên môn. |
 | **Phishing** (`phishing`) | - `interaction`: mức tương tác (`none`/`clicked_link`/`entered_information`/`unknown`)<br>- `channel`: kênh nhận (`email`/`message`/`other`) | - `sender_text`: địa chỉ người gửi/tên miền nghi vấn (tối đa 254 ký tự) | **Cảnh báo bảo mật:** *"Không nhập mật khẩu, mã OTP hoặc dữ liệu bí mật vào báo cáo; nếu đã nhập thông tin trên trang nghi giả mạo, hãy liên hệ IT/Security qua kênh chính thức."* |
 
-#### Quy tắc xác thực trường chung (Common Fields Validation):
+#### Field chung
 - `title`: Chuỗi từ 5 đến 120 ký tự (bắt buộc).
 - `description`: Chuỗi từ 20 đến 2000 ký tự (bắt buộc).
 - `building`: Chuỗi từ 1 đến 120 ký tự (bắt buộc).
@@ -73,9 +61,7 @@ flowchart TD
 - `observed_at`: Tùy chọn, chuẩn ISO 8601 UTC, **không được ở tương lai**.
 - `Idempotency-Key`: UUID tạo ở client, ngăn chặn gửi lặp khi mạng chập chờn.
 
----
-
-### 2.3. Ma trận trạng thái giao diện Reporter (Loading, Empty, Error, 401, 409)
+### Trạng thái giao diện
 
 | Trạng thái | Điều kiện kích hoạt | Biểu hiện trên giao diện | Hành động phục hồi |
 | :--- | :--- | :--- | :--- |
@@ -85,9 +71,7 @@ flowchart TD
 | **Error 401 (Unauthenticated)**| Token hết hạn hoặc chưa đăng nhập | Toast cảnh báo *"Phiên đăng nhập đã hết hạn"*, tự động chuyển hướng về form đăng nhập | Đăng nhập lại để cấp token mới |
 | **Error 409 (Conflict)** | Gửi bổ sung thông tin với `expected_version` bị cũ | Modal thông báo *"Sự cố đã được cập nhật bởi thao tác khác. Vui lòng làm mới dữ liệu"* kèm nút *"Tải lại dữ liệu"* | Bấm tải lại để lấy version mới nhất, form bổ sung giữ lại nội dung đang gõ |
 
----
-
-### 2.4. Wireframe Layout — Reporter
+### Wireframe reporter
 
 ```text
 +------------------------------------------------------------------------------------+
@@ -122,13 +106,11 @@ flowchart TD
 |                                                                                    |
 |  [ Gửi báo cáo sự cố ] (Idempotency Protected)                                     |
 +------------------------------------------------------------------------------------+
-`
+```
 
----
+## N7 — Handler và manager
 
-## 3. Luồng và Wireframe Task N7 (Nguyễn Nhật Quang — Giao diện nhân viên & quản lý)
-
-### 3.1. Sơ đồ luồng tổng thể Handler & Manager
+### Luồng chính
 
 ```mermaid
 flowchart TD
@@ -165,39 +147,30 @@ flowchart TD
 
     %% Ghi chú
     ActionBranch -- Bình luận --> AddNote[Thêm Public Comment hoặc Internal Note]
-`
+```
 
----
+### SLA và triage queue
 
-### 3.2. Đặc tả SLA và Hàng đợi Triage
-
-#### Bảng quy tắc SLA tiếp nhận (Acknowledgment SLA):
+#### SLA tiếp nhận
 - **P1:** Deadline tiếp nhận là **15 phút** kể từ `reported_at`.
 - **P2:** Deadline tiếp nhận là **2 giờ** kể từ `reported_at`.
 - **P3:** Deadline tiếp nhận là **8 giờ** kể từ `reported_at`.
-- **Dừng đồng hồ SLA:** Khi Handler hoặc Manager thực hiện `Acknowledge` (`assigned` $\rightarrow$ `in_progress`), mốc `acknowledged_at` được ghi nhận vĩnh viễn và dừng SLA tiếp nhận.
-- **Cảnh báo Overdue:** Nếu hiện tại $\ge$ deadline mà chưa được tiếp nhận (`acknowledged_at = null`), giao diện hiển thị badge nhấp nháy đỏ **"QUÁ HẠN (OVERDUE)"** và tính toán thời gian trễ.
+- SLA dừng khi incident chuyển `assigned → in_progress`; `acknowledged_at` được ghi một lần.
+- Nếu đã qua deadline mà `acknowledged_at = null`, hiển thị nhãn “Quá hạn” và thời gian trễ.
 
-#### Hàng đợi Triage thủ công (`triage_required = true`):
+#### Triage queue (`triage_required = true`)
 - Khi sự cố không khớp rule tự động hoặc câu trả lời có "không rõ", hệ thống gán vào `triage_queue`.
 - Sự cố giữ `status = reported`, `priority = null`.
 - Manager của hàng đợi Triage có quyền xem và thực hiện chuyển sang bộ phận phụ trách (`Cơ sở vật chất`, `Điện và an toàn`, `IT/Security`) và gán priority phù hợp kèm lý do bắt buộc.
 
----
+### Xử lý 409 khi hai người cùng thao tác
 
-### 3.3. Xử lý xung đột đồng thời 409 (Optimistic Concurrency Control)
+Mỗi thao tác ghi gửi `expected_version`. Nếu A và B cùng mở version 1, A lưu
+trước thì incident lên version 2. B gửi version 1 sẽ nhận `409 version_conflict`.
+Giao diện giữ dữ liệu B đang nhập, báo “Bản ghi đã thay đổi” và cho tải lại
+incident trước khi gửi tiếp.
 
-Mọi thao tác thay đổi trạng thái đều bắt buộc gửi kèm `expected_version`:
-1. Nếu hai nhân viên cùng mở sự cố ở `version: 1`:
-   - Nhân viên A nhận sự cố trước $\rightarrow$ Thành công, sự cố tăng lên `version: 2`.
-   - Nhân viên B nhấn phân công với `expected_version: 1` $\rightarrow$ Backend/Mock API trả HTTP 409 với code `version_conflict`.
-2. Phản hồi giao diện:
-   - Hiển thị thông báo xung đột: *"Bản ghi đã thay đổi bởi thao tác khác. Hãy tải lại trước khi tiếp tục."*
-   - Cung cấp nút bấm *"Tải lại dữ liệu mới nhất"* để cập nhật trạng thái mới nhất từ server mà không làm crash hay reload toàn trang.
-
----
-
-### 3.4. Wireframe Layout — Hàng đợi & Chi tiết Staff
+### Wireframe hàng đợi và chi tiết
 
 ```text
 +------------------------------------------------------------------------------------+
@@ -235,14 +208,13 @@ CHI TIẾT SỰ CỐ #2ee24992 (Version: 1)
 | [HÀNH ĐỘNG]:                                       | [Thêm bình luận công khai]    |
 | [Tiếp nhận (Ack)] [Phân công] [Đổi ưu tiên] [Giải quyết] [Đóng/Mở lại] [Simulate 409]|
 +----------------------------------------------------+-------------------------------+
-`
+```
 
----
+## Mock API
 
-## 4. Danh mục Mock API Contract & Fixture Data
+Các endpoint dùng trong luồng giao diện; request/response chi tiết xem [API contract](api-contract.md):
 
-Hệ thống Mock API hỗ trợ đầy đủ các endpoint theo [API contract](api-contract.md):
-- `POST /api/v1/auth/login` & `GET /api/v1/auth/me` & `POST /api/v1/auth/logou`
+- `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `POST /api/v1/auth/logout`
 - `GET /api/v1/incidents` (phân quyền dữ liệu theo role, cursor pagination)
 - `POST /api/v1/incidents` (tạo incident, Idempotency-Key 24h)
 - `GET /api/v1/incidents/:id`

@@ -1,4 +1,3 @@
-
 import json
 from pathlib import Path
 from uuid import UUID
@@ -33,11 +32,23 @@ def test_role_permissions(principal_data, action, allowed_roles):
 def test_shared_principal_fixture_is_complete():
     assert FIXTURE["schema_version"] == 1
     departments = {item["id"] for item in FIXTURE["departments"]}
-    assert len(departments) == 2
+    assert len(departments) == 4
     assert {item["role"] for item in FIXTURE["principals"]} == {
-        "reporter", "handler", "department_manager", "administrator"
+        "reporter",
+        "handler",
+        "department_manager",
+        "administrator",
     }
-    assert len({item["user_id"] for item in FIXTURE["principals"]}) == 4
+    assert len({item["user_id"] for item in FIXTURE["principals"]}) == 5
+    triage_department_id = next(
+        item["id"]
+        for item in FIXTURE["departments"]
+        if item["name"] == "Hàng đợi phân loại thủ công"
+    )
+    assert any(
+        item["role"] == "department_manager" and item["department_id"] == triage_department_id
+        for item in FIXTURE["principals"]
+    )
     for item in FIXTURE["principals"]:
         UUID(item["user_id"])
         if item["department_id"] is not None:

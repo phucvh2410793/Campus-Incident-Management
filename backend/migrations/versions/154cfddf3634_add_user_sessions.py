@@ -1,11 +1,11 @@
-
 """add user sessions
 
 Revision ID: 154cfddf3634
 Revises: 0001_identity
 """
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 
 revision = "154cfddf3634"
 down_revision = "0001_identity"
@@ -27,9 +27,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("token_hash"),
     )
