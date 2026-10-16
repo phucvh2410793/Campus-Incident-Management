@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass
 from typing import Annotated, Protocol
 
@@ -27,8 +26,7 @@ class Principal:
 class Policy(Protocol):
     """Interface for authorization policies."""
 
-    def allows(self, principal: Principal, action: str) -> bool:
-        ...
+    def allows(self, principal: Principal, action: str) -> bool: ...
 
 
 class RolePolicy:
@@ -57,9 +55,7 @@ def get_principal(
         user_id=str(current_user.id),
         role=current_user.role,
         department_id=(
-            str(current_user.department_id)
-            if current_user.department_id is not None
-            else None
+            str(current_user.department_id) if current_user.department_id is not None else None
         ),
     )
 

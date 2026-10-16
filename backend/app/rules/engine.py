@@ -1,4 +1,4 @@
-﻿from app.rules.schemas import RuleResult
+from app.rules.schemas import RuleResult
 
 RULE_VERSION = "demo-v1"
 MANUAL_QUEUE = "Hàng đợi phân loại thủ công"

@@ -9,9 +9,7 @@ from app.sla.policy import calculate_deadline, should_escalate
 
 REPORTED_AT = datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
 SLA_CASES = json.loads(
-    (Path(__file__).parents[2] / "docs" / "fixtures" / "n3_cases.json").read_text(
-        encoding="utf-8"
-    )
+    (Path(__file__).parents[2] / "docs" / "fixtures" / "n3_cases.json").read_text(encoding="utf-8")
 )["sla_cases"]
 
 
@@ -32,21 +30,15 @@ def test_deadline_matches_priority(priority, expected):
 
 
 def test_p1_does_not_escalate_before_deadline():
-    assert not should_escalate(
-        REPORTED_AT, "p1", REPORTED_AT + timedelta(minutes=14, seconds=59)
-    )
+    assert not should_escalate(REPORTED_AT, "p1", REPORTED_AT + timedelta(minutes=14, seconds=59))
 
 
 def test_p1_escalates_at_deadline_if_unacknowledged():
-    assert should_escalate(
-        REPORTED_AT, "p1", REPORTED_AT + timedelta(minutes=15)
-    )
+    assert should_escalate(REPORTED_AT, "p1", REPORTED_AT + timedelta(minutes=15))
 
 
 def test_p1_escalates_after_deadline_if_unacknowledged():
-    assert should_escalate(
-        REPORTED_AT, "p1", REPORTED_AT + timedelta(minutes=16)
-    )
+    assert should_escalate(REPORTED_AT, "p1", REPORTED_AT + timedelta(minutes=16))
 
 
 @pytest.mark.parametrize(
@@ -90,12 +82,15 @@ def test_t10_t11_match_shared_fixture(case):
     reported_at = parse_utc(case["reported_at"])
     clock = FakeClock(parse_utc(case["job_at"]))
     assert calculate_deadline(reported_at, case["priority"]) == parse_utc(case["deadline_at"])
-    assert should_escalate(
-        reported_at,
-        case["priority"],
-        clock.now(),
-        acknowledged_at=parse_utc(case["acknowledged_at"]),
-    ) is case["expected_escalation"]
+    assert (
+        should_escalate(
+            reported_at,
+            case["priority"],
+            clock.now(),
+            acknowledged_at=parse_utc(case["acknowledged_at"]),
+        )
+        is case["expected_escalation"]
+    )
 
 
 def test_t12_commit_orders_match_shared_fixture():

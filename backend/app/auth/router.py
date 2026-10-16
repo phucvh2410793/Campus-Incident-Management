@@ -1,5 +1,5 @@
-
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
@@ -20,24 +20,17 @@ from app.auth.security import (
 )
 from app.models import User
 
-
 router = APIRouter(
     prefix="/api/v1/auth",
     tags=["authentication"],
 )
 
-SESSION_DURATION_HOURS = 12
+SESSION_DURATION_HOURS = 8
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
-
-
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_at: datetime
 
 
 class UserResponse(BaseModel):
@@ -49,16 +42,32 @@ class UserResponse(BaseModel):
     is_active: bool
 
 
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: datetime
+    user: UserResponse
+
+
+def user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        display_name=user.display_name,
+        role=user.role,
+        department_id=str(user.department_id) if user.department_id else None,
+        is_active=user.is_active,
+    )
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(
     payload: LoginRequest,
-    db: DBSession = Depends(get_db),
+    db: Annotated[DBSession, Depends(get_db)],
 ):
     email = str(payload.email).lower()
 
-    user = db.scalar(
-        select(User).where(User.email == email)
-    )
+    user = db.scalar(select(User).where(User.email == email))
 
     if (
         user is None
@@ -75,9 +84,7 @@ def login(
         )
 
     token = create_session_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(
-        hours=SESSION_DURATION_HOURS
-    )
+    expires_at = datetime.now(UTC) + timedelta(hours=SESSION_DURATION_HOURS)
 
     session = UserSession(
         user_id=user.id,
@@ -91,25 +98,15 @@ def login(
     return LoginResponse(
         access_token=token,
         expires_at=expires_at,
+        user=user_response(user),
     )
 
 
 @router.get("/me", response_model=UserResponse)
 def get_me(
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
-    return UserResponse(
-        id=str(current_user.id),
-        email=current_user.email,
-        display_name=current_user.display_name,
-        role=current_user.role,
-        department_id=(
-            str(current_user.department_id)
-            if current_user.department_id
-            else None
-        ),
-        is_active=current_user.is_active,
-    )
+    return user_response(current_user)
 
 
 @router.post(
@@ -117,11 +114,9 @@ def get_me(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def logout(
-    credentials: HTTPAuthorizationCredentials | None = Depends(
-        bearer_scheme
-    ),
-    current_user: User = Depends(get_current_user),
-    db: DBSession = Depends(get_db),
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
 ):
     # Hash the supplied token before looking up its session.
     token_hash = hash_session_token(credentials.credentials)
@@ -141,7 +136,7 @@ def logout(
         )
 
     # Revoke the session so the token cannot be reused.
-    session.revoked_at = datetime.now(timezone.utc)
+    session.revoked_at = datetime.now(UTC)
     db.commit()
 
     return None

@@ -25,20 +25,21 @@ ALLOWED = {
 }
 
 
+@pytest.mark.parametrize("role", ["department_manager", "administrator"])
 @pytest.mark.parametrize("source,target", list(itertools.product(Status, repeat=2)))
-def test_manager_transition_matrix(source, target):
+def test_manager_transition_matrix(source, target, role):
     request = TransitionRequest(
         target_status=target, expected_version=1, reason="Review", resolution="Fixed"
     )
     if (source.value, target.value) in ALLOWED:
-        validate_transition(source, "department_manager", request)
+        validate_transition(source, role, request)
     else:
         with pytest.raises(WorkflowViolation) as caught:
-            validate_transition(source, "department_manager", request)
+            validate_transition(source, role, request)
         assert (caught.value.http_status, caught.value.code) == (409, "invalid_transition")
 
 
-@pytest.mark.parametrize("role", ["reporter", "administrator", "service", "unknown"])
+@pytest.mark.parametrize("role", ["reporter", "service", "unknown"])
 def test_non_processing_roles_cannot_resolve(role):
     request = TransitionRequest(target_status="resolved", expected_version=1, resolution="Fix")
     with pytest.raises(WorkflowViolation) as caught:

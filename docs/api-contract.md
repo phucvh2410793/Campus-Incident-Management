@@ -1,8 +1,6 @@
 # API contract — Campus Incident Management
 
-**Trạng thái:** đặc tả để triển khai, không phải danh sách endpoint đã chạy. Source hiện chỉ có `GET /api/v1/health/live`, `GET /api/v1/health/ready`, `/docs` và `/openapi.json`. Frontend/backend/n8n phải dùng hợp đồng dưới đây; khi triển khai cần cập nhật OpenAPI sinh từ FastAPI và giữ ví dụ trong tài liệu đồng bộ với test.
-
-Phạm vi nghiệp vụ, ma trận quyền, rule `demo-v1` và SLA demo nằm trong [đặc tả phần A](phan-a-yeu-cau-nghiep-vu.md). Đây là hệ thống **demo bằng dữ liệu giả**, không phải API ứng cứu chính thức của trường.
+Request, response và quyền của các endpoint `/api/v1` nằm ở đây. Khi thêm endpoint, cập nhật OpenAPI và test cùng lúc. Luồng nghiệp vụ và rule `demo-v1` được mô tả trong [yêu cầu nghiệp vụ](business-requirements.md). Demo dùng dữ liệu giả.
 
 ## 1. Quy ước chung
 
@@ -12,7 +10,7 @@ Phạm vi nghiệp vụ, ma trận quyền, rule `demo-v1` và SLA demo nằm tr
 | Nội dung | JSON UTF-8 `application/json`; upload riêng dùng `multipart/form-data`; download trả stream với `Content-Disposition: attachment`. |
 | ID | UUID dạng chuỗi; client không tự chọn `reporter_id`, `actor_id`, `department_id` từ phiên hoặc vai trò. |
 | Thời gian | ISO 8601 UTC có `Z`, ví dụ `2026-11-02T09:30:00Z`; input `observed_at` không được ở tương lai. |
-| Enum trên dây | `category`: `water_leak`, `electrical_hazard`, `phishing`; `status`: `reported`, `assigned`, `in_progress`, `resolved`, `closed`; `severity`: `low`, `medium`, `high`, `critical`; `priority`: `p1`, `p2`, `p3`. Phần A dùng tên hiển thị viết hoa cho cùng giá trị. |
+| Enum trên dây | `category`: `water_leak`, `electrical_hazard`, `phishing`; `status`: `reported`, `assigned`, `in_progress`, `resolved`, `closed`; `severity`: `low`, `medium`, `high`, `critical`; `priority`: `p1`, `p2`, `p3`. Tài liệu nghiệp vụ dùng tên hiển thị viết hoa cho cùng giá trị. |
 | Chưa phân loại | `severity`, `priority`, `department_id`, `rule_evaluation` có thể `null`; `triage_required=true`. Không dùng `p3` như giá trị mặc định. |
 | Version | Mỗi incident có `version` nguyên dương. Mọi thao tác thay đổi một incident đã tồn tại gửi `expected_version`; nếu không khớp trả `409 version_conflict` và không ghi gì. |
 | Phân trang | `limit` mặc định 20, tối đa 100; `cursor` opaque. Sắp xếp danh sách theo `reported_at DESC, id DESC`. Response có `items`, `next_cursor` (`null` khi hết). Cursor không được dùng để vượt phạm vi quyền. |
@@ -54,7 +52,7 @@ Với ID incident/file không thuộc phạm vi xem của người dùng, luôn 
 
 ## 2. Xác thực và quyền
 
-**Quyết định demo:** dùng opaque bearer token cho API người dùng. Login tạo token ngẫu nhiên, chỉ trả bản gốc một lần; backend lưu **hash** token, `user_id`, `expires_at`, `revoked_at`, `created_at` trong bảng session. Token có TTL 8 giờ; không có refresh endpoint. Frontend giữ token trong bộ nhớ ứng dụng, không lưu `localStorage`, `sessionStorage`, cookie hoặc log. Tải lại trang phải đăng nhập lại. Logout thu hồi session; vô hiệu user làm mọi session không còn hiệu lực. Với bearer header, trình duyệt không tự gửi credential như cookie nên bản demo không dùng CSRF token. Mật khẩu được băm bằng thuật toán password hashing phù hợp (Argon2id được đề xuất), không lưu hay trả plaintext.
+API dùng opaque bearer token. Login tạo token ngẫu nhiên và chỉ trả bản gốc một lần; backend lưu hash token cùng `user_id`, `expires_at`, `revoked_at`, `created_at`. Token hết hạn sau 8 giờ, không có refresh endpoint. Frontend giữ token trong memory, không lưu vào browser storage, cookie hoặc log. Tải lại trang cần đăng nhập lại. Logout thu hồi session; user bị khóa không dùng được session cũ. Mật khẩu được hash, không lưu hoặc trả plaintext.
 
 Header cho endpoint người dùng: `Authorization: Bearer <token>`. `GET /auth/me` là nguồn thông tin role/department cho UI, nhưng backend luôn kiểm tra lại trên từng request. Vai trò wire: `reporter`, `handler`, `department_manager`, `administrator`. Administrator có quyền đọc và thao tác trên mọi incident/file, không bị giới hạn bởi bộ phận, người báo hoặc người được giao. Quyền này không bỏ qua kiểm tra dữ liệu, trạng thái, `expected_version`, lý do hay audit.
 
@@ -110,7 +108,7 @@ Trường chung: `title` 5–120 ký tự, `description` 20–2000, `building` 1
 
 Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknown` hợp lệ nhưng có thể dẫn tới `triage_required=true`, không phải 422. Field không có trong schema bị 422. File được upload **sau khi** incident tạo thành công ở endpoint riêng; lỗi upload không xóa incident và UI phải báo rõ tình trạng từng file.
 
-Schema lưu trữ do N2 chốt ở [incident data model](incident-data-model.md); ba bộ dữ liệu giả ổn định cho N2–N7 nằm tại [shared incident fixtures](fixtures/incidents.json). Fixture ID dùng cho test/mock, không phải ID do client gửi khi tạo incident.
+Schema lưu trữ ở [incident data model](incident-data-model.md); ba request mẫu ở [incidents.json](fixtures/incidents.json). UUID cố định trong fixture chỉ dùng cho test/mock; API tạo ID mới trên server.
 
 ### IncidentResponse
 
@@ -244,7 +242,7 @@ Payload không chứa mô tả/file/ghi chú nhạy cảm. n8n phải truy vấn
 | POST | `/internal/notifications/{id}/complete` | Service n8n | `{ "status": "sent"|"failed"|"uncertain", "provider_message_id": string|null }` | 200: trạng thái đã ghi; không tự gửi lại `sent/uncertain` |
 | POST | `/internal/sla/check` | Service n8n theo lịch | Không body | 200: `{checked_count, escalations_created}`; backend kiểm tra/ghi atomic |
 
-Backend đánh giá rule và kiểm tra quyền/trạng thái; n8n chỉ điều phối. `/evaluate` không tin `priority`, `department_id`, `reporter_id` từ body. Nếu event đến hai lần, transaction/unique key trả cùng kết quả. Job SLA chỉ tạo escalation `(incident_id, level)` một lần và một outbox notification trong cùng transaction; deadline dựa `reported_at` đến `acknowledged_at` theo [phần A](phan-a-yeu-cau-nghiep-vu.md). Incident `triage_required` có hàng chờ/cảnh báo review riêng, không tự nhận P3.
+Backend đánh giá rule và kiểm tra quyền/trạng thái; n8n chỉ điều phối. `/evaluate` không tin `priority`, `department_id`, `reporter_id` từ body. Nếu event đến hai lần, transaction/unique key trả cùng kết quả. Job SLA chỉ tạo escalation `(incident_id, level)` một lần và một outbox notification trong cùng transaction; deadline dựa `reported_at` đến `acknowledged_at` theo [yêu cầu nghiệp vụ](business-requirements.md). Incident `triage_required` có hàng chờ/cảnh báo review riêng, không tự nhận P3.
 
 **Giới hạn email:** nếu nhà cung cấp email đã nhận thư nhưng n8n chết trước khi ghi `sent`, hệ thống không thể chứng minh thư đã tới hộp nhận. Đánh dấu `uncertain` và yêu cầu người có quyền kiểm tra thủ công trước khi gửi lại; không hứa “exactly once” ở phía email. `claim` ngăn các lần gửi lặp trong điều kiện bình thường. Email chỉ dùng hộp thư thử, không có file, ghi chú nội bộ, token hay dữ liệu nhạy cảm.
 
@@ -257,4 +255,4 @@ Backend đánh giá rule và kiểm tra quyền/trạng thái; n8n chỉ điều
 5. Hai người thao tác cùng version: một giao dịch thắng, giao dịch còn lại 409; UI tải lại chi tiết và yêu cầu người dùng quyết định tiếp.
 6. Reporter đổi UUID incident/file của người khác: 404 không lộ nội dung; manager khác bộ phận cũng 404. User có thể xem incident nhưng không được đóng nhận 403.
 
-Các ca nghiệm thu chi tiết T01–T18 nằm trong [kế hoạch kiểm thử](test-plan.md). Trước khi coi contract đã được triển khai, test phải đối chiếu request/response thực với bảng này và OpenAPI của FastAPI, đặc biệt payload lỗi, idempotency, quyền bản ghi và giao dịch DB/outbox.
+Các ca T01–T18 ở [kế hoạch kiểm thử](test-plan.md). Test API cần đối chiếu response thực với contract và OpenAPI, nhất là lỗi, idempotency, quyền theo bản ghi và transaction DB/outbox.

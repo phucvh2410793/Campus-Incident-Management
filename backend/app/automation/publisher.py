@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from app.automation.schemas import EventEnvelope, EventType
@@ -74,7 +74,7 @@ class InMemoryEventPublisher:
             event_type=event_type,
             incident_id=incident_id,
             request_id=request_id,
-            occurred_at=occurred_at or datetime.now(timezone.utc),
+            occurred_at=occurred_at or datetime.now(UTC),
         )
         self.publish(envelope)
         return envelope

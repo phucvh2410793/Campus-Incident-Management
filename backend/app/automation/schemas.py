@@ -1,11 +1,11 @@
 import uuid
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """Event types supported by CIM event envelope (docs/api-contract.md section 6)."""
 
     INCIDENT_REPORTED = "incident.reported"
@@ -41,7 +41,7 @@ class EventEnvelope(BaseModel):
         description="ID of the related incident.",
     )
     occurred_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Event creation timestamp in UTC.",
     )
     schema_version: int = Field(
@@ -58,13 +58,13 @@ class EventEnvelope(BaseModel):
     @classmethod
     def ensure_utc(cls, v: datetime) -> datetime:
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     @field_serializer("occurred_at")
     def serialize_datetime(self, dt: datetime) -> str:
         # Standardize to format 2026-11-02T09:30:00Z
-        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     @field_serializer("event_id", "incident_id", "request_id")
     def serialize_uuid(self, u: uuid.UUID) -> str:

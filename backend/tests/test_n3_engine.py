@@ -1,4 +1,4 @@
-﻿import json
+import json
 from pathlib import Path
 
 from app.rules.engine import evaluate_incident

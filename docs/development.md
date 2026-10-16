@@ -5,9 +5,9 @@
 - Docker Desktop với Linux containers và Docker Compose để chạy toàn bộ stack.
 - Node.js 24 + npm cho frontend chạy trực tiếp.
 - Python 3.14 cho backend chạy trực tiếp và kiểm thử.
-- Git để quản lý source. Repository chưa có remote; nhóm cần thêm URL repo thật.
+- Git để quản lý source.
 
-Frontend có `package-lock.json`; backend có dependency được cố định trong `requirements.txt` và `requirements-dev.txt`. Khi nâng phiên bản, chạy lại kiểm tra và review thay đổi lock/config.
+Frontend dùng `package-lock.json`; backend dùng `requirements.txt` và `requirements-dev.txt`. Sau khi đổi dependency, chạy lại lint, build và test.
 
 ## Chạy toàn bộ bằng Docker
 
@@ -18,12 +18,11 @@ docker version
 powershell -ExecutionPolicy Bypass -File scripts/init-env.ps1
 docker compose config --quiet
 docker compose up --build -d --wait
-powershell -ExecutionPolicy Bypass -File scripts/verify-docker.ps1
 ```
 
-Script tạo `.env` bằng giá trị ngẫu nhiên dạng hex để password có thể dùng trong URL database; không ghi đè file đã tồn tại. Không chia sẻ `.env` lên Git. Với macOS/Linux, sao chép `.env.example` thành `.env`, thay hai placeholder bằng chuỗi hex ngẫu nhiên, ví dụ tạo riêng từng giá trị bằng `openssl rand -hex 32`.
+`init-env.ps1` tạo `.env` bằng giá trị ngẫu nhiên và không ghi đè file cũ. Không đưa `.env` lên Git. Trên macOS/Linux, sao chép `.env.example` thành `.env` rồi tạo hai giá trị riêng bằng `openssl rand -hex 32`.
 
-Compose chạy PostgreSQL trước, migration kế tiếp, rồi backend và frontend. n8n chạy độc lập. Nếu migration lỗi, backend không được khởi động; kiểm tra log thay vì bỏ qua migration.
+Compose chạy PostgreSQL, migration, backend rồi frontend; n8n chạy riêng. Nếu migration lỗi, xem log của `migrate`.
 
 | Dịch vụ | Địa chỉ trên máy phát triển |
 | --- | --- |
@@ -34,9 +33,9 @@ Compose chạy PostgreSQL trước, migration kế tiếp, rồi backend và fro
 | n8n | http://localhost:5678 |
 | PostgreSQL | localhost:15432 |
 
-Cổng PostgreSQL trên máy mặc định là `15432` để tránh xung đột với dịch vụ đang dùng `5432`. Đổi `POSTGRES_PORT` ở root `.env` và URL trong `backend/.env` đồng bộ nếu chạy backend trực tiếp. Cổng giữa container vẫn là `5432`.
+Cổng PostgreSQL trên máy là `15432`, trong Docker là `5432`. Nếu đổi `POSTGRES_PORT` trong `.env`, cập nhật cả `backend/.env` khi chạy backend trực tiếp.
 
-Frontend là Vite dev server trong cấu hình này. Image frontend hiện không phải bản deploy production. n8n yêu cầu tạo owner account ở lần truy cập đầu tiên; chưa có tài khoản demo mặc định.
+Frontend chạy bằng Vite dev server. n8n yêu cầu tạo owner account ở lần truy cập đầu tiên; ứng dụng chưa có tài khoản demo mặc định.
 
 ## Frontend chạy trực tiếp
 
@@ -46,7 +45,7 @@ npm ci
 npm run dev
 ```
 
-Vite chuyển `/api` đến `http://127.0.0.1:8000`. Đổi `API_PROXY_TARGET` trong `frontend/.env` nếu backend ở địa chỉ khác. Biến này chỉ dùng bởi dev server; không đưa secrets vào biến `VITE_*` vì chúng có thể được bundle vào trình duyệt.
+Vite proxy `/api` đến `http://127.0.0.1:8000`. Nếu backend chạy ở địa chỉ khác, đổi `API_PROXY_TARGET` trong `frontend/.env`. Không đưa secrets vào biến `VITE_*`; chúng được bundle vào frontend.
 
 ## Backend chạy trực tiếp
 
@@ -66,9 +65,13 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 
 Lệnh sao chép env chỉ thực hiện khi file chưa có; giữ cấu hình đã sửa trong lần chạy sau. Linux/macOS dùng `python3 -m venv .venv`, `.venv/bin/python`, `.venv/bin/alembic` và `.venv/bin/ruff`.
 
-Liveness chạy được khi chưa có PostgreSQL. Readiness trả HTTP 503 nếu không kết nối database; không trả chi tiết chứa password. Hiện readiness kiểm tra kết nối, chưa kiểm tra toàn bộ chức năng nghiệp vụ.
+Liveness không cần PostgreSQL. Readiness trả 503 khi mất kết nối DB và không lộ password.
 
 ## Kiểm tra
+
+Trước khi chạy toàn bộ pytest, tạo PostgreSQL database riêng tên
+`campus_incident_test`, chạy `alembic upgrade head` trên database đó và đặt
+`TEST_DATABASE_URL` trỏ vào nó. Các test auth API không dùng database ứng dụng.
 
 ```powershell
 # Từ frontend/
@@ -82,13 +85,16 @@ npm run build
 .venv/Scripts/alembic.exe upgrade head --sql
 ```
 
-`--sql` chỉ sinh SQL, không chứng minh migration đã chạy trên PostgreSQL. Khi database đã chạy, kiểm tra thêm:
+`--sql` chỉ in SQL. Để kiểm tra database đang chạy:
 
 ```powershell
 .venv/Scripts/alembic.exe upgrade head
 .venv/Scripts/alembic.exe current
-.venv/Scripts/alembic.exe check
 ```
+
+`alembic check` so sánh model với database; hiện báo bảng incident, attachment và
+idempotency vì N2 thêm migration ở W2. `scripts/verify-docker.ps1` cũng chạy
+lệnh này, nên dùng script đầy đủ sau khi có migration N2.
 
 Chỉ chạy kiểm tra downgrade trên database thử nghiệm riêng; không chạy trên dữ liệu nhóm đang dùng.
 
@@ -100,7 +106,7 @@ Từ thư mục gốc, sau khi cài dependencies frontend và backend:
 backend/.venv/Scripts/python.exe scripts/smoke-check.py
 ```
 
-Script mở API/Vite tạm thời trên cổng 18100/15173, kiểm tra HTML và proxy `/api`, rồi dừng hai process. Hai cổng này phải đang trống. Kiểm tra này không chứng minh giao diện đã render trong trình duyệt hoặc DB đã sẵn sàng.
+Script dùng cổng 18100/15173 để kiểm tra HTML và proxy `/api`, rồi dừng hai process. Kiểm tra này không render UI trong trình duyệt.
 
 ## Log, dừng và troubleshooting
 

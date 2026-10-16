@@ -2,8 +2,8 @@ import hashlib
 import hmac
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 HEADER_EVENT_ID = "X-CIM-Event-ID"
 HEADER_TIMESTAMP = "X-CIM-Timestamp"
@@ -88,13 +88,16 @@ def verify_webhook_request(
         return WebhookVerificationResult(
             is_valid=False,
             error_code="missing_headers",
-            error_message="Thiếu một trong các header bắt buộc: X-CIM-Event-ID, X-CIM-Timestamp, X-CIM-Signature",
+            error_message=(
+                "Thiếu một trong các header bắt buộc: "
+                "X-CIM-Event-ID, X-CIM-Timestamp, X-CIM-Signature"
+            ),
         )
 
     # Validate UUID
     try:
         parsed_event_id = uuid.UUID(event_id_str)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return WebhookVerificationResult(
             is_valid=False,
             error_code="invalid_event_id",
@@ -104,7 +107,7 @@ def verify_webhook_request(
     # Validate Timestamp
     try:
         parsed_timestamp = int(timestamp_str)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return WebhookVerificationResult(
             is_valid=False,
             error_code="invalid_timestamp_format",
@@ -119,7 +122,9 @@ def verify_webhook_request(
         return WebhookVerificationResult(
             is_valid=False,
             error_code="expired_timestamp",
-            error_message=f"Timestamp đã quá hạn ({time_delta}s > {tolerance_seconds}s). Từ chối sự kiện cũ.",
+            error_message=(
+                f"Timestamp đã quá hạn ({time_delta}s > {tolerance_seconds}s). Từ chối sự kiện cũ."
+            ),
             event_id=parsed_event_id,
             timestamp=parsed_timestamp,
         )
@@ -128,7 +133,10 @@ def verify_webhook_request(
         return WebhookVerificationResult(
             is_valid=False,
             error_code="future_timestamp",
-            error_message=f"Timestamp ở tương lai lệch quá mức cho phép ({-time_delta}s > {tolerance_seconds}s).",
+            error_message=(
+                "Timestamp ở tương lai lệch quá mức cho phép "
+                f"({-time_delta}s > {tolerance_seconds}s)."
+            ),
             event_id=parsed_event_id,
             timestamp=parsed_timestamp,
         )
