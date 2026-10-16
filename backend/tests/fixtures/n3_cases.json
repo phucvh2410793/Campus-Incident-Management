@@ -1,0 +1,119 @@
+﻿{
+  "rule_version": "demo-v1",
+  "classification_cases": [
+    {
+      "test_id": "T01",
+      "report_type": "water_leak",
+      "input": {
+        "leak_size": "small",
+        "near_electricity": "no"
+      },
+      "expected": {
+        "rule_id": "R07",
+        "severity": "Low",
+        "priority": "P3",
+        "department": "Cơ sở vật chất",
+        "triage_required": false
+      }
+    },
+    {
+      "test_id": "T02",
+      "report_type": "water_leak",
+      "input": {
+        "leak_size": "small",
+        "near_electricity": "yes"
+      },
+      "expected": {
+        "rule_id": "R03",
+        "severity": "High",
+        "priority": "P1",
+        "department": "Cơ sở vật chất",
+        "triage_required": false,
+        "safety_flags": ["near_electricity"]
+      }
+    },
+    {
+      "test_id": "T03",
+      "report_type": "electrical_hazard",
+      "input": {
+        "exposed_wire": "unknown",
+        "smoke_or_sparks": "yes"
+      },
+      "expected": {
+        "rule_id": "R01",
+        "severity": "Critical",
+        "priority": "P1",
+        "department": "Điện và an toàn",
+        "triage_required": false
+      }
+    },
+    {
+      "test_id": "T04",
+      "report_type": "phishing",
+      "input": {
+        "interaction": "none"
+      },
+      "expected": {
+        "rule_id": "R08",
+        "severity": "Low",
+        "priority": "P3",
+        "department": "IT/Security",
+        "triage_required": false
+      }
+    },
+    {
+      "test_id": "T05",
+      "report_type": "phishing",
+      "input": {
+        "interaction": "entered_information"
+      },
+      "expected": {
+        "rule_id": "R02",
+        "severity": "High",
+        "priority": "P1",
+        "department": "IT/Security",
+        "triage_required": false
+      }
+    },
+    {
+      "test_id": "T06",
+      "report_type": "unknown",
+      "input": {
+        "required_answer": "unknown"
+      },
+      "expected": {
+        "rule_id": null,
+        "severity": null,
+        "priority": null,
+        "department": "Hàng đợi phân loại thủ công",
+        "triage_required": true
+      }
+    }
+  ],
+  "sla_cases": [
+    {
+      "test_id": "T10",
+      "priority": "P1",
+      "deadline_minutes": 15,
+      "acknowledged": false,
+      "at_deadline": true,
+      "expected_escalation": true
+    },
+    {
+      "test_id": "T11",
+      "priority": "P1",
+      "deadline_minutes": 15,
+      "acknowledged": true,
+      "at_deadline": true,
+      "expected_escalation": false
+    },
+    {
+      "test_id": "T12",
+      "priority": "P1",
+      "deadline_minutes": 15,
+      "acknowledged": true,
+      "at_deadline": true,
+      "expected_escalation": false
+    }
+  ]
+}
