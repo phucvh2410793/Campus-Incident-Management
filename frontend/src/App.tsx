@@ -1,14 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
+import { ReporterWireframeView } from './features/reporter-w1/ReporterWireframeView.tsx'
+import { StaffWireframeView } from './features/staff-w1/StaffWireframeView.tsx'
+
+import { transitionGui } from './utils/transition.ts'
+
+type AppTab = 'reporter' | 'staff' | 'health'
 
 type Health = 'checking' | 'online' | 'offline'
-const labels: Record<Health, string> = {
+const healthLabels: Record<Health, string> = {
   checking: 'Đang kiểm tra API…',
   online: 'API đang hoạt động',
   offline: 'Chưa kết nối được API',
 }
 
-function App() {
+function FoundationHealthSection() {
   const [health, setHealth] = useState<Health>('checking')
   const [attempt, setAttempt] = useState(0)
 
@@ -25,7 +31,9 @@ function App() {
         }
         if (active) setHealth('online')
       })
-      .catch(() => { if (active) setHealth('offline') })
+      .catch(() => {
+        if (active) setHealth('offline')
+      })
       .finally(() => window.clearTimeout(timeout))
     return () => {
       active = false
@@ -35,33 +43,89 @@ function App() {
   }, [attempt])
 
   return (
-    <main className="shell">
-      <header>
-        <p className="eyebrow">USTH · Campus Incident Management</p>
-        <h1>Campus Incident Management</h1>
-        <p className="intro">Nền tảng tiếp nhận và theo dõi sự cố an toàn, an ninh trong khuôn viên trường.</p>
-      </header>
-      <section aria-labelledby="foundation-heading">
-        <h2 id="foundation-heading">Khung phát triển ban đầu</h2>
-        <p>Frontend và backend đã có cấu trúc để nhóm bắt đầu làm việc. Đăng nhập, gửi báo cáo, phân công và SLA sẽ được triển khai ở các bước tiếp theo.</p>
-        <p role="status" aria-live="polite" className={`health ${health}`}>{labels[health]}</p>
-        <button type="button" disabled={health === 'checking'} onClick={() => {
+    <section aria-labelledby="foundation-heading" className="foundation-box">
+      <h2 id="foundation-heading">Kiểm tra kết nối API Nền tảng (FastAPI)</h2>
+      <p>
+        Kiểm tra tính sẵn sàng của backend FastAPI gốc qua proxy <code>/api/v1/health/live</code>.
+      </p>
+      <p role="status" aria-live="polite" className={`health ${health}`}>
+        {healthLabels[health]}
+      </p>
+      <button
+        type="button"
+        disabled={health === 'checking'}
+        className="btn btn-outline btn-sm"
+        onClick={() => {
           setHealth('checking')
           setAttempt((value) => value + 1)
-        }}>Kiểm tra lại kết nối</button>
-        <p className="hint">Kết nối API ở đây chỉ kiểm tra dịch vụ HTTP. Database được kiểm tra riêng qua endpoint readiness.</p>
-      </section>
-      <section aria-labelledby="scope-heading">
-        <h2 id="scope-heading">Phạm vi MVP đề xuất</h2>
-        <ul className="scope">
-          <li><strong>Rò nước</strong><span>Vị trí, mức độ và nguy cơ gần nguồn điện.</span></li>
-          <li><strong>Nguy hiểm điện</strong><span>Dây điện hở, khói, tia lửa và bằng chứng.</span></li>
-          <li><strong>Phishing</strong><span>Email đáng ngờ và mức độ tương tác của người báo.</span></li>
-        </ul>
-      </section>
-      <footer>Bản phát triển nội bộ · Chưa tiếp nhận báo cáo sự cố thực tế.</footer>
-    </main>
+        }}
+      >
+        Kiểm tra lại kết nối HTTP
+      </button>
+      <p className="hint mt-2">
+        Kết nối API ở đây kiểm tra dịch vụ HTTP backend khi chạy Docker Compose. Các tính năng của
+        Task N6 và N7 chạy độc lập trên Mock API Adapter đúng contract.
+      </p>
+    </section>
   )
 }
 
-export default App
+export default function App() {
+  const [activeTab, setActiveTab] = useState<AppTab>('reporter')
+
+  return (
+    <div className="app-layout">
+      {/* Top Navbar */}
+      <header className="app-navbar">
+        <div className="navbar-brand">
+          <span className="brand-logo">🛡️ USTH</span>
+          <div className="brand-text">
+            <span className="brand-title">Hệ Thống Quản Lý Sự Cố Khuôn Viên</span>
+            <span className="brand-sub">Tiếp nhận và theo dõi an toàn, an ninh trong trường</span>
+          </div>
+        </div>
+
+        {/* Main Navigation Tabs */}
+        <nav className="navbar-nav">
+          <button
+            type="button"
+            className={`nav-link ${activeTab === 'reporter' ? 'active' : ''}`}
+            onClick={() => transitionGui(() => setActiveTab('reporter'))}
+          >
+            📐 Người Báo Cáo
+          </button>
+          <button
+            type="button"
+            className={`nav-link ${activeTab === 'staff' ? 'active' : ''}`}
+            onClick={() => transitionGui(() => setActiveTab('staff'))}
+          >
+            📋 Nhân Viên &amp; Quản Lý
+          </button>
+          <button
+            type="button"
+            className={`nav-link ${activeTab === 'health' ? 'active' : ''}`}
+            onClick={() => transitionGui(() => setActiveTab('health'))}
+          >
+            🔌 Kiểm Tra Kết Nối API
+          </button>
+        </nav>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="app-main-content">
+        <div key={activeTab} className="gui-fade-transition">
+          {activeTab === 'reporter' && <ReporterWireframeView />}
+          {activeTab === 'staff' && <StaffWireframeView />}
+          {activeTab === 'health' && <FoundationHealthSection />}
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="app-footer">
+        <p>
+          Hệ thống Quản lý Sự cố Khuôn viên · USTH Cyber Security
+        </p>
+      </footer>
+    </div>
+  )
+}

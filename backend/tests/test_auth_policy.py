@@ -17,8 +17,8 @@ FIXTURE = json.loads(
 @pytest.mark.parametrize(
     ("action", "allowed_roles"),
     [
-        ("report_incident", {"reporter", "handler", "department_manager"}),
-        ("view_assigned_incidents", {"handler", "department_manager"}),
+        ("report_incident", {"reporter", "handler", "department_manager", "administrator"}),
+        ("view_assigned_incidents", {"handler", "department_manager", "administrator"}),
         ("manage_department", {"administrator"}),
         ("manage_users", {"administrator"}),
         ("manage_roles", {"administrator"}),

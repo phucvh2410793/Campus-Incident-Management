@@ -26,7 +26,7 @@ MVP chưa tự phát hiện từ log, chưa tích hợp email/SMS thật của t
 | Reporter | Tạo báo cáo, xem/bổ sung thông tin và trao đổi công khai trên báo cáo của mình | Incident do mình tạo |
 | Handler | Nhận việc, ghi cập nhật, resolution và ghi chú nội bộ | Incident được giao thuộc bộ phận |
 | Department Manager | Theo dõi hàng đợi, phân công/đổi ưu tiên/đóng/mở lại có lý do | Incident của bộ phận mình |
-| Administrator | Quản lý tài khoản, bộ phận, rules và cấu hình | Quyền đọc incident không mặc định; chỉ có khi được cấp rõ |
+| Administrator | Quản lý tài khoản, bộ phận, rules, cấu hình và xử lý mọi incident khi cần | Mọi incident, file và bộ phận; thao tác có audit |
 | Service n8n | Gọi API nội bộ bằng service credential giới hạn quyền | Chỉ các hành động workflow được cấp, không đọc toàn bộ bằng chứng |
 
 Bộ phận demo: **Cơ sở vật chất**, **Điện và an toàn**, **IT/Security**, **Hàng đợi phân loại thủ công**. Đây là tên minh họa; bộ phận thật và người nhận escalation phải được trường xác nhận trước khi dùng thật. Rò nước thường chuyển Cơ sở vật chất; nếu gần điện, đồng thời gắn cờ an toàn để người phụ trách đánh giá. Nguy hiểm điện chuyển Điện và an toàn. Phishing chuyển IT/Security. Báo cáo hợp lệ nhưng chưa đủ điều kiện phân loại vào hàng đợi thủ công, không tự tạo người xử lý giả.
@@ -107,17 +107,17 @@ Không cho nhảy trạng thái ngoài bảng. Đổi handler/bộ phận là h�
 
 | Hành động | Reporter | Handler | Manager | Administrator | Service n8n |
 | --- | --- | --- | --- | --- | --- |
-| Tạo báo cáo | Có, cho mình | Có, cho mình nếu cần | Có, cho mình nếu cần | Không mặc định | Không |
-| Xem incident | Của mình | Được giao | Của bộ phận | Không mặc định | Chỉ metadata cần workflow |
-| Bổ sung thông tin / comment công khai | Của mình | Được giao | Của bộ phận | Không mặc định | Không |
-| Ghi chú nội bộ | Không | Được giao | Của bộ phận | Không mặc định | Không |
-| Tải file | File của incident mình được xem | Incident được giao | Incident của bộ phận | Không mặc định | Không mặc định |
-| Phân công / đổi priority | Không | Không | Của bộ phận, có lý do | Không mặc định | Chỉ endpoint quy định, có event ID |
-| Nhận / xử lý | Không | Được giao | Của bộ phận | Không mặc định | Không |
-| Đóng / mở lại | Không | Không | Của bộ phận, có lý do | Không mặc định | Không |
+| Tạo báo cáo | Có, cho mình | Có, cho mình nếu cần | Có, cho mình nếu cần | Có, cho mình | Không |
+| Xem incident | Của mình | Được giao | Của bộ phận | Mọi incident | Chỉ metadata cần workflow |
+| Bổ sung thông tin / comment công khai | Của mình | Được giao | Của bộ phận | Mọi incident | Không |
+| Ghi chú nội bộ | Không | Được giao | Của bộ phận | Mọi incident | Không |
+| Tải file | File của incident mình được xem | Incident được giao | Incident của bộ phận | Mọi incident | Không mặc định |
+| Phân công / đổi priority | Không | Không | Của bộ phận, có lý do | Mọi incident, có lý do | Chỉ endpoint quy định, có event ID |
+| Nhận / xử lý | Không | Được giao | Của bộ phận | Mọi incident | Không |
+| Đóng / mở lại | Không | Không | Của bộ phận, có lý do | Mọi incident, có lý do | Không |
 | Quản lý user/department/rule | Không | Không | Không | Có, có audit | Không |
 
-Backend kiểm tra role **và** phạm vi bản ghi ở mọi API; ẩn nút UI không đủ. Mặc định từ chối. Comment/file có visibility public/internal, nhưng “public” chỉ có nghĩa hiển thị cho người liên quan có quyền, không phải URL công khai. Admin không tự động được xem bằng chứng; nếu cần truy cập hỗ trợ, phải có quyền riêng, mục đích và audit. Email không chứa bằng chứng, ghi chú nội bộ, token hoặc mật khẩu.
+Backend kiểm tra role **và** phạm vi bản ghi ở mọi API; administrator là ngoại lệ phạm vi bộ phận/chủ sở hữu nhưng vẫn cần phiên hợp lệ, validation, version, lý do và audit. Ẩn nút UI không đủ; vai trò khác mặc định bị từ chối ngoài phạm vi. Comment/file có visibility public/internal, nhưng “public” chỉ có nghĩa hiển thị cho người liên quan có quyền, không phải URL công khai. Email không chứa bằng chứng, ghi chú nội bộ, token hoặc mật khẩu.
 
 ## A10. Cảnh báo khẩn cấp và dữ liệu nhạy cảm
 
