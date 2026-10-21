@@ -97,7 +97,7 @@ def verify_webhook_request(
     # Validate UUID
     try:
         parsed_event_id = uuid.UUID(event_id_str)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):  # fmt: skip
         return WebhookVerificationResult(
             is_valid=False,
             error_code="invalid_event_id",
@@ -107,7 +107,7 @@ def verify_webhook_request(
     # Validate Timestamp
     try:
         parsed_timestamp = int(timestamp_str)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):  # fmt: skip
         return WebhookVerificationResult(
             is_valid=False,
             error_code="invalid_timestamp_format",
