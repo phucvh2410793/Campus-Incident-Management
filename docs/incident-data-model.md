@@ -1,6 +1,6 @@
 # Incident data model
 
-Model N2 hỗ trợ ba loại báo cáo MVP. SQLAlchemy model có trong `backend/app/incidents` và `backend/app/evidence`; database migration nằm ở W2. Request/response xem [API contract](api-contract.md), dữ liệu mẫu xem [incidents.json](fixtures/incidents.json).
+Model N2 hỗ trợ ba loại báo cáo MVP. SQLAlchemy model có trong `backend/app/incidents` và `backend/app/evidence`; migration `n2w2_incident_storage` tạo các bảng trên PostgreSQL. Request/response xem [API contract](api-contract.md), dữ liệu mẫu dùng chung xem [incidents.json](fixtures/incidents.json).
 
 ## Bảng dữ liệu
 
@@ -38,3 +38,16 @@ Khóa chính là `(user_id, key)`; `key` lấy từ header `Idempotency-Key`. B�
 - Thời gian mẫu là ISO 8601 UTC (`Z`). `observed_at` không được ở tương lai; `reported_at` production do server tạo.
 - Fixture không chứa người thật, credentials, secrets hay file. Evidence được upload riêng.
 - `expected_evaluation` là kết quả rule để đối chiếu, không thuộc request của reporter.
+
+## Migration và seed W2
+
+Chạy `alembic upgrade head` trên database sạch sau migration identity/session. Revision N2 tạo `incidents` (gồm `answers` JSONB), `incident_attachments` (chỉ metadata) và `idempotency_records`. Chỉ mục `(reported_at, id)` phục vụ thứ tự danh sách; các chỉ mục có thêm `reporter_id`, `department_id` hoặc `assigned_handler_id` phục vụ phạm vi người xem. Hàng đợi triage có chỉ mục riêng cho bản ghi `triage_required=true`.
+
+Seed chỉ tạo 30 incident giả ở trạng thái `reported`, chưa phân loại và không tạo file hoặc idempotency record. Cần có một reporter giả từ seed N1 trước khi chạy; truyền UUID của tài khoản đó để seed không sửa bảng user:
+
+```powershell
+# Từ backend/ với DATABASE_URL trỏ đến DB cần seed
+.venv/Scripts/python.exe -m app.incidents.seed --reporter-id <UUID-reporter>
+```
+
+Seed dùng UUID xác định từ reporter và số thứ tự. Chạy lại cùng reporter không thêm bản ghi; dùng hơn 20 incident để thử trang thứ hai với `reported_at DESC, id DESC`. Chỉ chạy trên database demo/test, không chạy trên dữ liệu thật.

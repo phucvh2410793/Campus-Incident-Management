@@ -38,6 +38,15 @@ class Incident(Base):
         ),
         sa.CheckConstraint("jsonb_typeof(answers) = 'object'", name="ck_incidents_answers_object"),
         sa.Index("ix_incidents_reported_at_id", "reported_at", "id"),
+        sa.Index("ix_incidents_reporter_reported_at_id", "reporter_id", "reported_at", "id"),
+        sa.Index("ix_incidents_department_reported_at_id", "department_id", "reported_at", "id"),
+        sa.Index("ix_incidents_handler_reported_at_id", "assigned_handler_id", "reported_at", "id"),
+        sa.Index(
+            "ix_incidents_triage_reported_at_id",
+            "reported_at",
+            "id",
+            postgresql_where=sa.text("triage_required = true"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
