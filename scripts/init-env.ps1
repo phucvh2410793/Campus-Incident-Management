@@ -14,5 +14,8 @@ function New-RandomHex {
 $content = Get-Content -Raw -LiteralPath (Join-Path $projectRoot '.env.example')
 $content = $content.Replace('POSTGRES_PASSWORD=replace-with-random-hex', "POSTGRES_PASSWORD=$(New-RandomHex)")
 $content = $content.Replace('N8N_ENCRYPTION_KEY=replace-with-random-hex', "N8N_ENCRYPTION_KEY=$(New-RandomHex)")
+foreach ($name in @('CIM_DEMO_REPORTER_PASSWORD', 'CIM_DEMO_HANDLER_PASSWORD', 'CIM_DEMO_MANAGER_PASSWORD', 'CIM_DEMO_ADMIN_PASSWORD', 'CIM_DEMO_TRIAGE_MANAGER_PASSWORD')) {
+    $content = $content.Replace("${name}=replace-with-random-hex", "${name}=$(New-RandomHex)")
+}
 [IO.File]::WriteAllText($destination, $content, [Text.UTF8Encoding]::new($false))
 Write-Host 'Created local .env with random credentials. Keep it outside Git.'
