@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 import { ReporterWireframeView } from './features/reporter-w1/ReporterWireframeView.tsx'
-import { StaffWireframeView } from './features/staff-w1/StaffWireframeView.tsx'
+import { StaffManagementView } from './features/staff/StaffManagementView.tsx'
 
 import { transitionGui } from './utils/transition.ts'
 
@@ -115,7 +115,7 @@ export default function App() {
       <main className="app-main-content">
         <div key={activeTab} className="gui-fade-transition">
           {activeTab === 'reporter' && <ReporterWireframeView />}
-          {activeTab === 'staff' && <StaffWireframeView />}
+          {activeTab === 'staff' && <StaffManagementView />}
           {activeTab === 'health' && <FoundationHealthSection />}
         </div>
       </main>
