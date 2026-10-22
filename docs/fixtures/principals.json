@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic principals for N1-N7 tests and mock APIs; IDs are fixtures, not credentials.",
+  "departments": [
+    {"id": "20000000-0000-4000-8000-000000000001", "name": "Cơ sở vật chất"},
+    {"id": "20000000-0000-4000-8000-000000000002", "name": "Điện và an toàn"},
+    {"id": "20000000-0000-4000-8000-000000000003", "name": "IT/Security"},
+    {"id": "20000000-0000-4000-8000-000000000004", "name": "Hàng đợi phân loại thủ công"}
+  ],
+  "principals": [
+    {"user_id": "10000000-0000-4000-8000-000000000001", "role": "reporter", "department_id": null},
+    {"user_id": "10000000-0000-4000-8000-000000000002", "role": "handler", "department_id": "20000000-0000-4000-8000-000000000001"},
+    {"user_id": "10000000-0000-4000-8000-000000000003", "role": "department_manager", "department_id": "20000000-0000-4000-8000-000000000002"},
+    {"user_id": "10000000-0000-4000-8000-000000000004", "role": "administrator", "department_id": null},
+    {"user_id": "10000000-0000-4000-8000-000000000005", "role": "department_manager", "department_id": "20000000-0000-4000-8000-000000000004"}
+  ]
+}

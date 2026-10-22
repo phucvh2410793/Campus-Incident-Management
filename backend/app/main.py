@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.auth.router import router as auth_router
 from app.core.config import get_settings
 from app.db import engine
 
@@ -22,19 +23,31 @@ async def lifespan(app: FastAPI):
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+
+app = FastAPI(
+    title=settings.app_name,
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# Authentication routes: login and other auth endpoints.
+app.include_router(auth_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
 @app.get("/api/v1/health/live", tags=["health"])
 def liveness():
-    return {"status": "ok", "service": "campus-incident-management-api"}
+    return {
+        "status": "ok",
+        "service": "campus-incident-management-api",
+    }
 
 
 @app.get("/api/v1/health/ready", tags=["health"])
@@ -42,5 +55,12 @@ def readiness():
     try:
         check_database()
     except SQLAlchemyError:
-        return JSONResponse(status_code=503, content={"status": "unavailable"})
-    return {"status": "ok", "database": "reachable"}
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable"},
+        )
+
+    return {
+        "status": "ok",
+        "database": "reachable",
+    }

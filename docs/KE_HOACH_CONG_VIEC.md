@@ -1,22 +1,23 @@
-# Kế hoạch công việc Campus Incident Management 
+# Kế hoạch công việc Campus Incident Management
 
-**Thời gian:** 12/10/2026–03/01/2027 để hoàn thành mã nguồn, kiểm thử và bàn giao. Từ 04/01 đến 12/01/2027 chỉ ôn tập, diễn tập và bảo vệ.
-Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, API contract, skeleton React/FastAPI, health API, PostgreSQL/Compose cơ bản và workflow health đã có, không giao lại. Phạm vi nền tảng là ba loại báo cáo MVP; các mở rộng chỉ nhận thêm sau khi nhóm xác nhận thời gian và rubric.
+**Thời gian:** 12/10/2026–03/01/2027 cho phát triển và kiểm thử. Từ 04/01 đến 12/01/2027 dành cho ôn tập, diễn tập và bảo vệ.
 
-- Dùng [API contract](api-contract.md) và [đặc tả phần A](phan-a-yeu-cau-nghiep-vu.md) làm đầu vào chung đã có từ ngày đầu. N1 công bố fixture Principal, N2 công bố fixture Incident, N3–N5 công bố fixture rule/state/event, N6–N7 dùng mock API đúng contract. Mỗi người code và test trên fixture của mảng mình ngay cả khi API thật chưa ghép.
-- Mỗi người chỉ sửa module và migration thuộc mảng mình. Migrations mới là additive; không sửa revision của người khác. Khi cần đổi contract, ghi rõ endpoint/schema và cập nhật fixture + test liên quan trước khi ghép.
-- Mốc ghép W4, W7, W8–W9 và W11 là kiểm tra tương thích, không phải điều kiện để bắt đầu việc của tuần trước đó. Mỗi chủ mảng tự sửa lỗi thuộc mảng mình. Tích hợp cuối cùng vẫn cần phối hợp; không thể có hệ thống chạy chung mà hoàn toàn không có giao diện giữa các mảng.
-- Mỗi đầu việc hoàn thành khi có sản phẩm chạy được, test của mảng và bằng chứng nghiệm thu. Không chuyển việc chưa xong cho người khác chỉ vì sang tuần. Nơi phân công tên là tab **7 mảng** trong Excel; không cần chọn chủ sở hữu cho từng dòng.
+Kế hoạch chia theo bảy mảng N1–N7. Phạm vi MVP gồm rò nước, nguy hiểm điện và phishing.
 
-| Vị trí | Mảng sở hữu | Ranh giới chính | Thư mục dự kiến |
-| --- | --- | --- | --- |
-| N1 | Tài khoản, quyền & nền dữ liệu | Sở hữu users, departments, sessions, policy và seed tài khoản; không sửa logic nghiệp vụ của các mảng khác. | `backend/app/auth, backend/app/core/policy, migration identity` |
-| N2 | Tiếp nhận báo cáo & dữ liệu | Sở hữu incident lõi, answers, idempotency, file evidence và API reporter; công bố fixture incident từ W1. | `backend/app/incidents, backend/app/evidence, migration incident/evidence` |
-| N3 | Phân loại, triage & SLA | Sở hữu rule demo-v1, triage_required, priority/deadline và escalation; dùng incident fixture từ đầu. | `backend/app/rules, backend/app/sla, migration rule/escalation` |
-| N4 | Phân công & vòng đời xử lý | Sở hữu assignment, comment, status transition, history/audit của thao tác xử lý; dùng principal và incident giả trong test. | `backend/app/workflow, backend/app/comments, migration assignment/history` |
-| N5 | n8n, outbox & thông báo | Sở hữu outbox, dispatcher, API internal, workflow n8n, email demo và retry; dùng event fixture độc lập. | `backend/app/automation, workflows, migration outbox/notification` |
-| N6 | Giao diện người báo | Sở hữu login, ba form, upload và danh sách/chi tiết reporter; phát triển bằng mock API đúng contract. | `frontend/src/features/reporter, frontend/src/features/auth` |
-| N7 | Giao diện nhân viên & quản lý | Sở hữu hàng đợi, triage, phân công, xử lý, dashboard demo và E2E staff; dùng mock API đúng contract. | `frontend/src/features/staff, frontend/src/features/manager` |
+- Dùng [API contract](api-contract.md), [yêu cầu nghiệp vụ](business-requirements.md) và fixture chung khi viết code/test. N6–N7 dùng mock API trước khi nối backend.
+- Khi đổi contract, cập nhật fixture và test liên quan; migration mới thêm revision thay vì sửa revision đã áp dụng.
+- W4, W7, W8–W9 và W11 là các mốc tích hợp. Mỗi mảng vẫn phát triển song song từ W1.
+- Hoàn thành một đầu việc khi code chạy được và test tương ứng qua.
+
+| Vị trí | Mảng | Công việc chính |
+| --- | --- | --- |
+| N1 | Tài khoản, quyền & nền dữ liệu | Users, departments, sessions, policy và seed tài khoản. |
+| N2 | Tiếp nhận báo cáo & dữ liệu | Incident, answers, idempotency, evidence và API reporter. |
+| N3 | Phân loại, triage & SLA | Rule `demo-v1`, priority, deadline và escalation. |
+| N4 | Phân công & vòng đời xử lý | Assignment, comment, status transition, history và audit. |
+| N5 | n8n, outbox & thông báo | Outbox, dispatcher, API nội bộ, workflow n8n, email demo và retry. |
+| N6 | Giao diện người báo | Login, ba form, upload và danh sách/chi tiết reporter. |
+| N7 | Giao diện nhân viên & quản lý | Hàng đợi, triage, phân công, xử lý, dashboard và E2E staff. |
 
 ## Việc theo từng người và từng tuần
 
@@ -24,24 +25,24 @@ Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, AP
 
 | Tuần / ngày | Việc của mảng | Hoàn thành khi |
 | --- | --- | --- |
-| W1 · 12/10/2026–18/10/2026 | Chốt bảng user/department/session, ma trận quyền và interface Principal/Policy; tạo fixture bốn vai trò cho các mảng khác dùng ngay. | ERD phần sở hữu, fixture và hợp đồng Principal/Policy chạy độc lập. |
+| W1 · 12/10/2026–18/10/2026 | Thiết kế bảng user/department/session, ma trận quyền và interface Principal/Policy; tạo fixture bốn vai trò để các mảng dùng chung. | Có ERD, fixture và Principal/Policy chạy độc lập. |
 | W2 · 19/10/2026–25/10/2026 | Viết migration bổ sung session, seed tài khoản/bộ phận giả, mật khẩu từ cấu hình ngoài Git. | DB sạch migrate/seed lặp lại không nhân đôi; đủ vai trò và hai bộ phận. |
 | W3 · 26/10/2026–01/11/2026 | Làm login, băm mật khẩu và rate limit; trả đúng lỗi 401/429 theo contract. | Test login đúng/sai/khóa/rate limit đạt bằng API thật. |
 | W4 · 02/11/2026–08/11/2026 | Làm bearer middleware, /auth/me, logout, hạn phiên và thu hồi khi khóa user. | Token chỉ lưu hash; hết hạn/logout/khóa đều trả 401. |
 | W5 · 09/11/2026–15/11/2026 | Đóng gói policy role/owner/department/assignment dùng chung và che 404 khi ngoài phạm vi. | Có test policy qua fixture, các router khác gọi cùng interface. |
-| W6 · 16/11/2026–22/11/2026 | Làm quản trị tối thiểu user/department/rule bằng CLI hoặc API có audit. | Tạo/khóa user demo không sửa DB tay; admin không tự xem incident. |
+| W6 · 16/11/2026–22/11/2026 | Làm quản trị tối thiểu user/department/rule bằng CLI hoặc API có audit. | Tạo/khóa user demo không sửa DB tay; admin xem và thao tác mọi incident theo contract, có audit. |
 | W7 · 23/11/2026–29/11/2026 | Ghép policy vào router incident, file, comment và thao tác xử lý tại mốc tích hợp. | Ma trận quyền thực tế đạt; truy cập chéo ID trả 404/403 đúng contract. |
 | W8 · 30/11/2026–06/12/2026 | Rà lỗi 401/403/404, thu hồi session và tài khoản đa vai trò trên dữ liệu seed lớn. | Test âm tính theo từng vai trò và bộ phận đều đạt. |
 | W9 · 07/12/2026–13/12/2026 | Cố định hợp đồng auth/permission, cập nhật OpenAPI và test tương thích frontend. | UI login/route chạy API thật; không còn endpoint giả trong luồng auth. |
 | W10 · 14/12/2026–20/12/2026 | Kiểm tra bảo mật token, log, secrets, rate limit và cấu hình demo. | Không lộ token/mật khẩu trong DB, log, export hoặc repo. |
 | W11 · 21/12/2026–27/12/2026 | Viết runbook tài khoản/seed và backup/restore PostgreSQL; thử khôi phục trên DB sạch. | Người khác dựng sạch, phục hồi DB và đăng nhập đủ vai trò theo README. |
-| W12 · 28/12/2026–03/01/2027 | Chạy lại toàn bộ regression auth/quyền; sửa lỗi chặn demo và chốt bản bàn giao. | Test auth/quyền xanh; phần mảng N1 đóng băng trước 04/01. |
+| W12 · 28/12/2026–03/01/2027 | Chạy regression auth/quyền, sửa lỗi chặn demo và chuẩn bị bàn giao. | Test auth/quyền xanh trước 04/01. |
 
 ### N2 — Tiếp nhận báo cáo & dữ liệu
 
 | Tuần / ngày | Việc của mảng | Hoàn thành khi |
 | --- | --- | --- |
-| W1 · 12/10/2026–18/10/2026 | Chốt schema incident/answers/evidence/idempotency và fixture ba báo cáo theo API contract; công bố dữ liệu mẫu cho N3–N7. | Có model/JSON fixture ổn định và quy ước version, ID, thời gian. |
+| W1 · 12/10/2026–18/10/2026 | Định nghĩa schema incident/answers/evidence/idempotency và fixture ba báo cáo theo API contract; chia sẻ dữ liệu mẫu cho N3–N7. | Có model, JSON fixture và quy ước version, ID, thời gian. |
 | W2 · 19/10/2026–25/10/2026 | Viết migration incident/answers/evidence/idempotency, chỉ mục lọc và seed báo cáo giả. | DB sạch migrate, seed lặp lại không nhân đôi và có dữ liệu phân trang. |
 | W3 · 26/10/2026–01/11/2026 | Viết validation ba form MVP; từ chối field lạ, reporter_id và dữ liệu không hợp lệ. | Ca hợp lệ/sai/unknown đúng contract, test schema độc lập. |
 | W4 · 02/11/2026–08/11/2026 | Làm POST /incidents và Idempotency-Key; dùng cổng phát event để N5 cắm vào sau. | Incident/key/event commit atomic; n8n tắt vẫn tạo được báo cáo. |
@@ -75,7 +76,7 @@ Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, AP
 
 | Tuần / ngày | Việc của mảng | Hoàn thành khi |
 | --- | --- | --- |
-| W1 · 12/10/2026–18/10/2026 | Chốt state machine, ma trận thao tác và fixture assignment/comment/version từ contract. | Có bảng transition, request/response mẫu và test case sai trạng thái. |
+| W1 · 12/10/2026–18/10/2026 | Định nghĩa state machine, ma trận thao tác và fixture assignment/comment/version từ contract. | Có bảng transition, request/response mẫu và test case sai trạng thái. |
 | W2 · 19/10/2026–25/10/2026 | Viết migration assignment/comment/status history/audit và repository riêng. | FK/index/visibility đúng; migration sạch không sửa revision cũ. |
 | W3 · 26/10/2026–01/11/2026 | Làm comment public/internal và serializer lọc visibility theo Principal giả. | Reporter không thấy internal dù gọi trực tiếp; nội dung được escape. |
 | W4 · 02/11/2026–08/11/2026 | Làm phân công/chuyển bộ phận với handler hợp lệ, reason và version check. | Sai bộ phận/role/version bị chặn; history giữ đầy đủ. |
@@ -103,7 +104,7 @@ Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, AP
 | W9 · 07/12/2026–13/12/2026 | Làm email cập nhật public state, khóa chống trùng và giới hạn nội dung. | Người báo chỉ nhận update public; retry không tạo thư lặp ngoài chính sách. |
 | W10 · 14/12/2026–20/12/2026 | Test n8n/email/API down, event trùng, restart, clock lệch và retry. | T13–T15 đạt; incident không mất và assignment không nhân đôi. |
 | W11 · 21/12/2026–27/12/2026 | Viết runbook import workflow, credentials riêng, kiểm hàng chờ lỗi và phục hồi. | Người khác dựng n8n sạch, test email giả và xử lý event lỗi. |
-| W12 · 28/12/2026–03/01/2027 | Regression automation/email/SLA job, chốt workflow xuất và secrets mẫu. | T13–T15 xanh; bản bàn giao không chứa credentials thật. |
+| W12 · 28/12/2026–03/01/2027 | Regression automation/email/SLA job, xuất workflow và kiểm tra secrets mẫu. | T13–T15 xanh; bản bàn giao không chứa credentials thật. |
 
 ### N6 — Giao diện người báo
 
@@ -116,7 +117,7 @@ Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, AP
 | W5 · 09/11/2026–15/11/2026 | Làm form phishing, kênh nhận/mức tương tác, chặn nhập password/OTP. | Không gửi/lưu secret; ba trạng thái tương tác phân biệt rõ. |
 | W6 · 16/11/2026–22/11/2026 | Làm submit chống gửi lặp, tạo incident rồi upload từng file, hiển thị lỗi riêng. | Incident thành công nhưng file lỗi được báo đúng, không nói thành công toàn bộ. |
 | W7 · 23/11/2026–29/11/2026 | Làm danh sách, chi tiết, timeline public, bổ sung thông tin và file được phép. | Reporter chỉ thấy dữ liệu của mình, UI có empty/error/loading. |
-| W8 · 30/11/2026–06/12/2026 | Thay mock bằng API thật N1/N2 theo adapter đã chốt; xử lý 401/403/404/409. | Luồng reporter thật chạy; xung đột yêu cầu tải lại. |
+| W8 · 30/11/2026–06/12/2026 | Thay mock bằng API N1/N2 qua adapter hiện có; xử lý 401/403/404/409. | Luồng reporter thật chạy; xung đột yêu cầu tải lại. |
 | W9 · 07/12/2026–13/12/2026 | Rà mobile, bàn phím, label, focus và thông tin priority không chỉ bằng màu. | Kịch bản chính thao tác trên điện thoại/laptop bằng bàn phím. |
 | W10 · 14/12/2026–20/12/2026 | Chạy E2E reporter tạo/xem/bổ sung/upload/lỗi phiên và file. | T16 phần reporter xanh; UI và DB cùng trạng thái. |
 | W11 · 21/12/2026–27/12/2026 | Viết hướng dẫn thao tác reporter và chuẩn bị dữ liệu reset ba tình huống. | Demo reporter có đường chính/dự phòng và ảnh minh họa đúng bản chạy. |
@@ -133,13 +134,13 @@ Bản kế hoạch này bắt đầu từ phần việc chưa làm. Phần A, AP
 | W5 · 09/11/2026–15/11/2026 | Làm UI triage, phân công/chuyển bộ phận, đổi priority kèm reason. | Form bắt reason; 409 tải lại và không mất dữ liệu nhập. |
 | W6 · 16/11/2026–22/11/2026 | Làm UI acknowledge, resolution, đóng/mở lại, duplicate/invalid. | Không hiện hành động sai trạng thái; backend vẫn là nơi quyết định quyền. |
 | W7 · 23/11/2026–29/11/2026 | Làm dashboard demo quá hạn/lỗi automation và chỉ số theo quyền. | Có trạng thái empty/error; số liệu đúng phạm vi role. |
-| W8 · 30/11/2026–06/12/2026 | Thay mock bằng API thật N1/N3/N4/N5 qua adapter đã chốt. | Triage→assign→ack→resolve→close chạy với DB thật. |
+| W8 · 30/11/2026–06/12/2026 | Thay mock bằng API N1/N3/N4/N5 qua adapter hiện có. | Triage→assign→ack→resolve→close chạy với DB thật. |
 | W9 · 07/12/2026–13/12/2026 | Rà bàn phím/mobile, focus, nhãn priority và cập nhật sau lỗi 403/409. | Handler/manager thao tác được trên laptop và màn nhỏ. |
 | W10 · 14/12/2026–20/12/2026 | Chạy E2E staff/manager từ hàng đợi đến đóng/mở lại, gồm lỗi quyền/automation. | T16 phần staff xanh; UI/DB/timeline cùng trạng thái. |
 | W11 · 21/12/2026–27/12/2026 | Chuẩn bị demo staff, dữ liệu reset, câu hỏi kiến trúc và kịch bản dự phòng. | Demo trọn luồng cùng N6, số liệu/rubric khớp bản chạy. |
 | W12 · 28/12/2026–03/01/2027 | Regression staff trên Compose cuối, sửa lỗi chặn demo và đóng băng UI. | Luồng staff/manager ổn định trước 04/01. |
 
-## Mốc ghép và chốt
+## Mốc tích hợp
 
 | Mốc | Nội dung kiểm tra chung |
 | --- | --- |

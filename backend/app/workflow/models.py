@@ -12,7 +12,8 @@ from app.db import Base
 class Record:
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(sa.ForeignKey("incidents.id"), index=True)
-    actor_id: Mapped[uuid.UUID] = mapped_column(sa.ForeignKey("users.id"), index=True)
+    # Automated assignments/history/audit have no user actor.
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.func.now()
     )

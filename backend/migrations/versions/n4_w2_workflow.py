@@ -1,25 +1,22 @@
-"""Pending N4 revision: activate only after N2 incident migration is merged.
-
-Move into versions and set down_revision to the actual N2 revision at integration.
-It is deliberately outside versions so current main still migrates successfully.
-"""
+"""Create assignment, comment, status history and audit storage."""
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "n4_w2_workflow"
-down_revision = None  # Set to N2's real revision before activation; not a new root.
+down_revision = "0002_n3_rule_sla"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # Frozen DDL, independent of future ORM edits.
     for table in ("assignments", "comments", "status_history", "audit_logs"):
         columns = [
             sa.Column("id", sa.Uuid(), primary_key=True),
             sa.Column("incident_id", sa.Uuid(), sa.ForeignKey("incidents.id"), nullable=False),
-            sa.Column("actor_id", sa.Uuid(), sa.ForeignKey("users.id"), nullable=False),
+            sa.Column(
+                "actor_id", sa.Uuid(), sa.ForeignKey("users.id"), nullable=table != "comments"
+            ),
             sa.Column(
                 "created_at",
                 sa.DateTime(timezone=True),

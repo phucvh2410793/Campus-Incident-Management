@@ -1,4 +1,4 @@
-"""N4 tests use a minimal N2 table fixture, never a production incident model."""
+"""N4 storage checks with isolated rows and the complete migration graph."""
 
 import importlib.util
 from io import StringIO
@@ -8,8 +8,10 @@ from uuid import uuid4
 import pytest
 import sqlalchemy as sa
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,19 +23,9 @@ from app.workflow.repository import WorkflowRepository
 TABLES = [Assignment.__table__, Comment.__table__, StatusHistory.__table__, AuditLog.__table__]
 
 
-@pytest.fixture(scope="module", autouse=True)
-def incident_metadata_boundary():
-    from app import models  # noqa: F401
-    from app.db import Base
-
-    incident = sa.Table("incidents", Base.metadata, sa.Column("id", sa.Uuid, primary_key=True))
-    yield
-    Base.metadata.remove(incident)
-
-
 def load_migration():
-    path = Path(__file__).parents[1] / "migrations" / "pending" / "n4_workflow.py"
-    spec = importlib.util.spec_from_file_location("n4_pending_migration", path)
+    path = Path(__file__).parents[1] / "migrations" / "versions" / "n4_w2_workflow.py"
+    spec = importlib.util.spec_from_file_location("n4_workflow_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -43,7 +35,7 @@ def load_migration():
 def storage():
     engine = sa.create_engine("sqlite://")
     metadata = sa.MetaData()
-    # Explicit isolated integration boundary: real N2 migration is not on main yet.
+    # SQLite exercises N4 DDL; the full migration chain is checked separately.
     for name in ("users", "departments", "incidents"):
         sa.Table(name, metadata, sa.Column("id", sa.Uuid, primary_key=True))
     for table in TABLES:
@@ -237,3 +229,30 @@ def test_postgresql_migration_sql_contains_foreign_keys_and_indexes():
     assert sql.count("REFERENCES incidents (id)") == 4
     assert "ix_assignments_handler_id" in sql
     assert "TIMESTAMP WITH TIME ZONE" in sql
+
+
+def test_n4_migration_is_the_only_head_and_models_are_registered():
+    from app import models  # noqa: F401
+    from app.db import Base
+
+    config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
+    scripts = ScriptDirectory.from_config(config)
+    assert scripts.get_heads() == ["n4_w2_workflow"]
+    assert {table.name for table in TABLES} <= set(Base.metadata.tables)
+
+
+def test_system_workflow_record_and_comment_actor_constraint(storage):
+    session, actor, department, incident, _ = storage
+    session.add(
+        Assignment(
+            incident_id=incident,
+            actor_id=None,
+            department_id=department,
+            reason="Automated triage",
+        )
+    )
+    session.flush()
+    session.add(Comment(incident_id=incident, actor_id=None, body="Update", visibility="public"))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
