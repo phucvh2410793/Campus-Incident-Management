@@ -36,3 +36,10 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.func.now()
     )
+
+
+# Keep N2 mappings registered in Base.metadata for Alembic autogeneration.
+from app.auth.models import Session as Session  # noqa: E402, F401
+from app.evidence.models import IncidentAttachment as IncidentAttachment  # noqa: E402, F401
+from app.incidents.models import IdempotencyRecord as IdempotencyRecord  # noqa: E402, F401
+from app.incidents.models import Incident as Incident  # noqa: E402, F401

@@ -1,8 +1,6 @@
 # API contract — Campus Incident Management
 
-**Trạng thái:** đặc tả để triển khai, không phải danh sách endpoint đã chạy. Source hiện chỉ có `GET /api/v1/health/live`, `GET /api/v1/health/ready`, `/docs` và `/openapi.json`. Frontend/backend/n8n phải dùng hợp đồng dưới đây; khi triển khai cần cập nhật OpenAPI sinh từ FastAPI và giữ ví dụ trong tài liệu đồng bộ với test.
-
-Phạm vi nghiệp vụ, ma trận quyền, rule `demo-v1` và SLA demo nằm trong [đặc tả phần A](phan-a-yeu-cau-nghiep-vu.md). Đây là hệ thống **demo bằng dữ liệu giả**, không phải API ứng cứu chính thức của trường.
+Request, response và quyền của các endpoint `/api/v1` nằm ở đây. Khi thêm endpoint, cập nhật OpenAPI và test cùng lúc. Luồng nghiệp vụ và rule `demo-v1` được mô tả trong [yêu cầu nghiệp vụ](business-requirements.md). Demo dùng dữ liệu giả.
 
 ## 1. Quy ước chung
 
@@ -12,7 +10,7 @@ Phạm vi nghiệp vụ, ma trận quyền, rule `demo-v1` và SLA demo nằm tr
 | Nội dung | JSON UTF-8 `application/json`; upload riêng dùng `multipart/form-data`; download trả stream với `Content-Disposition: attachment`. |
 | ID | UUID dạng chuỗi; client không tự chọn `reporter_id`, `actor_id`, `department_id` từ phiên hoặc vai trò. |
 | Thời gian | ISO 8601 UTC có `Z`, ví dụ `2026-11-02T09:30:00Z`; input `observed_at` không được ở tương lai. |
-| Enum trên dây | `category`: `water_leak`, `electrical_hazard`, `phishing`; `status`: `reported`, `assigned`, `in_progress`, `resolved`, `closed`; `severity`: `low`, `medium`, `high`, `critical`; `priority`: `p1`, `p2`, `p3`. Phần A dùng tên hiển thị viết hoa cho cùng giá trị. |
+| Enum trên dây | `category`: `water_leak`, `electrical_hazard`, `phishing`; `status`: `reported`, `assigned`, `in_progress`, `resolved`, `closed`; `severity`: `low`, `medium`, `high`, `critical`; `priority`: `p1`, `p2`, `p3`. Tài liệu nghiệp vụ dùng tên hiển thị viết hoa cho cùng giá trị. |
 | Chưa phân loại | `severity`, `priority`, `department_id`, `rule_evaluation` có thể `null`; `triage_required=true`. Không dùng `p3` như giá trị mặc định. |
 | Version | Mỗi incident có `version` nguyên dương. Mọi thao tác thay đổi một incident đã tồn tại gửi `expected_version`; nếu không khớp trả `409 version_conflict` và không ghi gì. |
 | Phân trang | `limit` mặc định 20, tối đa 100; `cursor` opaque. Sắp xếp danh sách theo `reported_at DESC, id DESC`. Response có `items`, `next_cursor` (`null` khi hết). Cursor không được dùng để vượt phạm vi quyền. |
@@ -54,9 +52,9 @@ Với ID incident/file không thuộc phạm vi xem của người dùng, luôn 
 
 ## 2. Xác thực và quyền
 
-**Quyết định demo:** dùng opaque bearer token cho API người dùng. Login tạo token ngẫu nhiên, chỉ trả bản gốc một lần; backend lưu **hash** token, `user_id`, `expires_at`, `revoked_at`, `created_at` trong bảng session. Token có TTL 8 giờ; không có refresh endpoint. Frontend giữ token trong bộ nhớ ứng dụng, không lưu `localStorage`, `sessionStorage`, cookie hoặc log. Tải lại trang phải đăng nhập lại. Logout thu hồi session; vô hiệu user làm mọi session không còn hiệu lực. Với bearer header, trình duyệt không tự gửi credential như cookie nên bản demo không dùng CSRF token. Mật khẩu được băm bằng thuật toán password hashing phù hợp (Argon2id được đề xuất), không lưu hay trả plaintext.
+API dùng opaque bearer token. Login tạo token ngẫu nhiên và chỉ trả bản gốc một lần; backend lưu hash token cùng `user_id`, `expires_at`, `revoked_at`, `created_at`. Token hết hạn sau 8 giờ, không có refresh endpoint. Frontend giữ token trong memory, không lưu vào browser storage, cookie hoặc log. Tải lại trang cần đăng nhập lại. Logout thu hồi session; user bị khóa không dùng được session cũ. Mật khẩu được hash, không lưu hoặc trả plaintext.
 
-Header cho endpoint người dùng: `Authorization: Bearer <token>`. `GET /auth/me` là nguồn thông tin role/department cho UI, nhưng backend luôn kiểm tra lại trên từng request. Vai trò wire: `reporter`, `handler`, `department_manager`, `administrator`. Admin **không mặc định** đọc được incident/file.
+Header cho endpoint người dùng: `Authorization: Bearer <token>`. `GET /auth/me` là nguồn thông tin role/department cho UI, nhưng backend luôn kiểm tra lại trên từng request. Vai trò wire: `reporter`, `handler`, `department_manager`, `administrator`. Administrator có quyền đọc và thao tác trên mọi incident/file, không bị giới hạn bởi bộ phận, người báo hoặc người được giao. Quyền này không bỏ qua kiểm tra dữ liệu, trạng thái, `expected_version`, lý do hay audit.
 
 | Method | Path | Ai gọi | Request | Thành công |
 | --- | --- | --- | --- | --- |
@@ -70,17 +68,17 @@ Header cho endpoint người dùng: `Authorization: Bearer <token>`. `GET /auth/
 
 | Hành động | Reporter | Handler | Department manager | Administrator |
 | --- | --- | --- | --- | --- |
-| Tạo/xem/bổ sung báo cáo | Của mình | Của mình khi là reporter; xem incident được giao | Xem incident của bộ phận | Không mặc định |
-| Xem/tạo comment công khai | Của mình | Incident được giao | Incident của bộ phận | Không mặc định |
-| Xem/tạo ghi chú nội bộ | Không | Incident được giao | Incident của bộ phận | Không mặc định |
-| Download/upload bằng chứng | Của incident mình được xem | Incident được giao | Incident của bộ phận | Không mặc định |
-| Phân công/đổi priority/đóng/mở lại | Không | Không | Incident của bộ phận, có lý do | Không mặc định |
-| Nhận và giải quyết | Không | Incident được giao | Incident của bộ phận | Không mặc định |
+| Tạo/xem/bổ sung báo cáo | Của mình | Của mình khi là reporter; xem incident được giao | Xem incident của bộ phận | Tạo cho mình; xem/bổ sung mọi incident |
+| Xem/tạo comment công khai | Của mình | Incident được giao | Incident của bộ phận | Mọi incident |
+| Xem/tạo ghi chú nội bộ | Không | Incident được giao | Incident của bộ phận | Mọi incident |
+| Download/upload bằng chứng | Của incident mình được xem | Incident được giao | Incident của bộ phận | Mọi incident |
+| Phân công/đổi priority/đóng/mở lại | Không | Không | Incident của bộ phận, có lý do | Mọi incident, có lý do |
+| Nhận và giải quyết | Không | Incident được giao | Incident của bộ phận | Mọi incident |
 | Quản lý user/department/rule/event lỗi | Không | Không | Không | Có audit |
 
-Manager có thể chuyển incident sang bộ phận khác chỉ khi đang quản lý bộ phận hiện tại; bộ phận đích phải hợp lệ. Handler mất quyền thao tác khi assignment chuyển sang người khác. Comment `public` chỉ là hiển thị cho các vai trò **có quyền đối với incident**, không phải endpoint công khai.
+Manager có thể chuyển incident sang bộ phận khác chỉ khi đang quản lý bộ phận hiện tại; administrator có thể làm việc này với mọi bộ phận. Bộ phận đích phải hợp lệ. Handler mất quyền thao tác khi assignment chuyển sang người khác. Comment `public` chỉ là hiển thị cho các vai trò **có quyền đối với incident**, không phải endpoint công khai. Mọi thao tác ghi của administrator trên incident/file/comment phải ghi actor và audit như các vai trò khác.
 
-Hàng đợi `triage_required` dùng một bộ phận nội bộ `triage_queue` với manager demo được chỉ định; đó **không phải** bộ phận xử lý cuối. Incident vẫn ở `reported`, `priority=null` và chưa có handler cho đến khi manager phân công đúng bộ phận. Manager của hàng đợi này được gọi `/assign` để chuyển khỏi triage; không cần quyền admin xem toàn bộ incident.
+Hàng đợi `triage_required` dùng một bộ phận nội bộ `triage_queue` với manager demo được chỉ định; đó **không phải** bộ phận xử lý cuối. Incident vẫn ở `reported`, `priority=null` và chưa có handler cho đến khi manager hoặc administrator phân công đúng bộ phận. Cả manager của hàng đợi và administrator được gọi `/assign` để chuyển khỏi triage.
 
 ## 3. Incident và form
 
@@ -95,7 +93,7 @@ Hàng đợi `triage_required` dùng một bộ phận nội bộ `triage_queue`
   "description": "Nước chảy từ trần gần cửa phòng học, sàn đang ướt.",
   "building": "Tòa A",
   "location_detail": "Tầng 2, gần phòng 205",
-  "observed_at": "2026-11-02T09:20:00Z",
+  "observed_at": "2026-10-11T02:15:00Z",
   "answers": {"leak_amount": "small", "near_electricity": "no", "slip_risk": true}
 }
 ```
@@ -110,6 +108,8 @@ Trường chung: `title` 5–120 ký tự, `description` 20–2000, `building` 1
 
 Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknown` hợp lệ nhưng có thể dẫn tới `triage_required=true`, không phải 422. Field không có trong schema bị 422. File được upload **sau khi** incident tạo thành công ở endpoint riêng; lỗi upload không xóa incident và UI phải báo rõ tình trạng từng file.
 
+Schema lưu trữ ở [incident data model](incident-data-model.md); ba request mẫu ở [incidents.json](fixtures/incidents.json). UUID cố định trong fixture chỉ dùng cho test/mock; API tạo ID mới trên server.
+
 ### IncidentResponse
 
 ```json
@@ -121,7 +121,7 @@ Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknow
   "description": "Nước chảy từ trần gần cửa phòng học, sàn đang ướt.",
   "building": "Tòa A",
   "location_detail": "Tầng 2, gần phòng 205",
-  "observed_at": "2026-11-02T09:20:00Z",
+  "observed_at": "2026-10-11T02:15:00Z",
   "answers": {"leak_amount": "small", "near_electricity": "no", "slip_risk": true},
   "reporter_id": "22e09230-76fd-4638-a97f-96919031e40b",
   "status": "reported",
@@ -131,7 +131,7 @@ Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknow
   "department_id": null,
   "assigned_handler_id": null,
   "rule_evaluation": null,
-  "reported_at": "2026-11-02T09:30:00Z",
+  "reported_at": "2026-10-11T02:20:00Z",
   "assigned_at": null,
   "acknowledged_at": null,
   "resolved_at": null,
@@ -151,7 +151,7 @@ Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknow
 | --- | --- | --- | --- | --- |
 | GET | `/incidents` | User đã đăng nhập, giới hạn theo bản ghi | `limit`, `cursor`, `status`, `category`, `priority`, `department_id`, `triage_required`, `overdue` (filter chỉ trả tập con được xem) | 200: `{items: IncidentSummary[], next_cursor: string|null}` |
 | GET | `/incidents/{incident_id}` | Người được xem bản ghi | Không body | 200: `IncidentResponse` theo phạm vi quyền |
-| POST | `/incidents/{incident_id}/supplements` | Reporter của incident khi chưa `resolved/closed` | `{ "text": string(1..2000), "expected_version": int }` | 201: `{id, created_at, incident_version}`; tạo history public |
+| POST | `/incidents/{incident_id}/supplements` | Reporter của incident hoặc administrator khi chưa `resolved/closed` | `{ "text": string(1..2000), "expected_version": int }` | 201: `{id, created_at, incident_version}`; tạo history public |
 | GET | `/incidents/{incident_id}/history` | Người được xem bản ghi | `limit`, `cursor` | 200: `{items: HistoryItem[], next_cursor}`; reporter chỉ thấy event public |
 
 `IncidentSummary`: `id`, `version`, `category`, `title`, `status`, `priority`, `triage_required`, `department_id` (nếu được phép), `reported_at`, `acknowledgment_deadline_at`, `overdue`. `overdue` chỉ đúng nếu chưa acknowledged và đã qua deadline; `triage_required` có cảnh báo review riêng, không giả SLA P1. `HistoryItem`: `id`, `action`, `actor_display_name` hoặc `"Hệ thống"`, `created_at`, `visibility`, `details` đã lọc theo quyền. Cursor phải ổn định khi thêm incident mới giữa hai trang.
@@ -162,7 +162,7 @@ Không nhận mật khẩu, OTP hoặc raw email chứa bí mật. Field `unknow
 
 | Method | Path | Quyền | Request | Response |
 | --- | --- | --- | --- | --- |
-| POST | `/incidents/{incident_id}/attachments` | Reporter của incident chưa đóng; handler/manager trong phạm vi | Multipart `file` + `expected_version`; tối đa 5 file/incident, 10 MiB/file; chỉ PDF/PNG/JPEG sau khi kiểm tra nội dung thật | 201: `{id, original_name, content_type, size_bytes, created_at, incident_version}` |
+| POST | `/incidents/{incident_id}/attachments` | Reporter của incident chưa đóng; handler/manager trong phạm vi; administrator với mọi incident chưa đóng | Multipart `file` + `expected_version`; tối đa 5 file/incident, 10 MiB/file; chỉ PDF/PNG/JPEG sau khi kiểm tra nội dung thật | 201: `{id, original_name, content_type, size_bytes, created_at, incident_version}` |
 | GET | `/incidents/{incident_id}/attachments` | Người được xem file của incident | Không body | 200: `{items: AttachmentSummary[]}` |
 | GET | `/incidents/{incident_id}/attachments/{attachment_id}/download` | Người được xem file của incident | Không body | 200 stream; `Cache-Control: no-store`; tên file an toàn |
 
@@ -175,7 +175,7 @@ Upload sai không để file mồ côi. Server tạo tên lưu ngẫu nhiên, kh
 | GET | `/incidents/{incident_id}/comments` | Người được xem incident | `limit`, `cursor` | 200: `{items: Comment[], next_cursor}` đã lọc visibility |
 | POST | `/incidents/{incident_id}/comments` | Reporter/handler/manager theo phạm vi | `{ "body": string(1..2000), "visibility": "public"|"internal", "expected_version": int }` | 201: `Comment` + `incident_version` |
 
-Reporter chỉ tạo `public`, không xem/tạo `internal`; handler/manager tạo cả hai. Comment hiển thị dưới dạng text đã escape, không render HTML người dùng nhập.
+Reporter chỉ tạo `public`, không xem/tạo `internal`; handler/manager trong phạm vi và administrator trên mọi incident tạo cả hai. Comment hiển thị dưới dạng text đã escape, không render HTML người dùng nhập.
 
 ### Hành động trên incident
 
@@ -183,24 +183,24 @@ Mỗi POST dưới đây bắt buộc `expected_version`; backend kiểm tra quy
 
 | Method | Path | Quyền | Body bắt buộc | Điều kiện |
 | --- | --- | --- | --- | --- |
-| POST | `/incidents/{id}/assign` | Manager của bộ phận hiện tại | `department_id`, `handler_id` hoặc null, `reason`, `expected_version` | Department/handler hợp lệ; `reported` chuyển `assigned`; phân công lại không tự reset `acknowledged_at`. |
-| POST | `/incidents/{id}/acknowledge` | Handler được giao hoặc manager cùng bộ phận | `expected_version` | Chỉ `assigned → in_progress`; ghi `acknowledged_at` một lần. |
-| POST | `/incidents/{id}/priority` | Manager của bộ phận | `priority`, `reason`, `expected_version` | Priority p1/p2/p3; tính lại deadline từ `reported_at` nếu chưa tiếp nhận, giữ escalation/history cũ. |
-| POST | `/incidents/{id}/transitions` | Handler được giao hoặc manager theo bảng bên dưới | `target_status`, `reason` hoặc `resolution` theo transition, `expected_version` | Chỉ các cạnh hợp lệ; trả 409 khi cạnh sai. |
-| POST | `/incidents/{id}/disposition` | Manager của bộ phận | `kind`: `duplicate`/`invalid`; `reason`; `duplicate_of_id` nếu trùng; `expected_version` | Lưu disposition/history và đóng incident; không xóa bản ghi. |
+| POST | `/incidents/{id}/assign` | Manager của bộ phận hiện tại hoặc administrator | `department_id`, `handler_id` hoặc null, `reason`, `expected_version` | Department/handler hợp lệ; `reported` chuyển `assigned`; phân công lại không tự reset `acknowledged_at`. |
+| POST | `/incidents/{id}/acknowledge` | Handler được giao, manager cùng bộ phận hoặc administrator | `expected_version` | Chỉ `assigned → in_progress`; ghi `acknowledged_at` một lần. |
+| POST | `/incidents/{id}/priority` | Manager của bộ phận hoặc administrator | `priority`, `reason`, `expected_version` | Priority p1/p2/p3; tính lại deadline từ `reported_at` nếu chưa tiếp nhận, giữ escalation/history cũ. |
+| POST | `/incidents/{id}/transitions` | Handler được giao, manager theo bảng bên dưới hoặc administrator | `target_status`, `reason` hoặc `resolution` theo transition, `expected_version` | Chỉ các cạnh hợp lệ; trả 409 khi cạnh sai. |
+| POST | `/incidents/{id}/disposition` | Manager của bộ phận hoặc administrator | `kind`: `duplicate`/`invalid`; `reason`; `duplicate_of_id` nếu trùng; `expected_version` | Lưu disposition/history và đóng incident; không xóa bản ghi. |
 
 | Từ → Đến | Ai được làm | Field thêm |
 | --- | --- | --- |
-| `in_progress → resolved` | Handler được giao hoặc manager | `resolution` không rỗng |
-| `resolved → closed` | Manager | `reason` xác nhận hoặc null |
-| `resolved → in_progress` | Manager | `reason` bắt buộc |
-| `closed → in_progress` | Manager | `reason` bắt buộc |
+| `in_progress → resolved` | Handler được giao, manager hoặc administrator | `resolution` không rỗng |
+| `resolved → closed` | Manager hoặc administrator | `reason` xác nhận hoặc null |
+| `resolved → in_progress` | Manager hoặc administrator | `reason` bắt buộc |
+| `closed → in_progress` | Manager hoặc administrator | `reason` bắt buộc |
 
 `reported → assigned` qua `/assign` hoặc API nội bộ; `assigned → in_progress` qua `/acknowledge`, không gọi `/transitions`. `disposition` chỉ dùng khi incident chưa `closed`. Các timestamp cũ/history không bị xóa khi mở lại; lần mở lại không tự tạo SLA tiếp nhận mới. Ghi nhận xung đột đồng thời bằng version check trong câu lệnh cập nhật/transaction, không chỉ kiểm tra ở frontend.
 
 ## 5. Quản trị tối thiểu và theo dõi lỗi
 
-Các endpoint dưới đây chỉ cho `administrator`, ghi audit. Có thể làm CLI quản trị tương đương nếu nhóm chọn bỏ UI, nhưng kết quả và quyền phải giống hợp đồng. Admin không nhờ các endpoint này để xem incident/file.
+Các endpoint dưới đây chỉ cho `administrator`, ghi audit. Có thể làm CLI quản trị tương đương nếu nhóm chọn bỏ UI, nhưng kết quả và quyền phải giống hợp đồng. Administrator dùng các endpoint incident/file thông thường để xem và thao tác trên mọi bản ghi.
 
 | Method | Path | Request / ý nghĩa | Response |
 | --- | --- | --- | --- |
@@ -225,7 +225,7 @@ n8n không gọi các endpoint user. Backend dispatcher gửi outbox event đế
   "event_id": "d69996e8-ae76-44d4-a396-41694498feb3",
   "event_type": "incident.reported",
   "incident_id": "2ee24992-34d3-4955-9e5c-f7446fd42393",
-  "occurred_at": "2026-11-02T09:30:00Z",
+  "occurred_at": "2026-10-11T02:20:00Z",
   "schema_version": 1,
   "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d"
 }
@@ -242,7 +242,7 @@ Payload không chứa mô tả/file/ghi chú nhạy cảm. n8n phải truy vấn
 | POST | `/internal/notifications/{id}/complete` | Service n8n | `{ "status": "sent"|"failed"|"uncertain", "provider_message_id": string|null }` | 200: trạng thái đã ghi; không tự gửi lại `sent/uncertain` |
 | POST | `/internal/sla/check` | Service n8n theo lịch | Không body | 200: `{checked_count, escalations_created}`; backend kiểm tra/ghi atomic |
 
-Backend đánh giá rule và kiểm tra quyền/trạng thái; n8n chỉ điều phối. `/evaluate` không tin `priority`, `department_id`, `reporter_id` từ body. Nếu event đến hai lần, transaction/unique key trả cùng kết quả. Job SLA chỉ tạo escalation `(incident_id, level)` một lần và một outbox notification trong cùng transaction; deadline dựa `reported_at` đến `acknowledged_at` theo [phần A](phan-a-yeu-cau-nghiep-vu.md). Incident `triage_required` có hàng chờ/cảnh báo review riêng, không tự nhận P3.
+Backend đánh giá rule và kiểm tra quyền/trạng thái; n8n chỉ điều phối. `/evaluate` không tin `priority`, `department_id`, `reporter_id` từ body. Nếu event đến hai lần, transaction/unique key trả cùng kết quả. Job SLA chỉ tạo escalation `(incident_id, level)` một lần và một outbox notification trong cùng transaction; deadline dựa `reported_at` đến `acknowledged_at` theo [yêu cầu nghiệp vụ](business-requirements.md). Incident `triage_required` có hàng chờ/cảnh báo review riêng, không tự nhận P3.
 
 **Giới hạn email:** nếu nhà cung cấp email đã nhận thư nhưng n8n chết trước khi ghi `sent`, hệ thống không thể chứng minh thư đã tới hộp nhận. Đánh dấu `uncertain` và yêu cầu người có quyền kiểm tra thủ công trước khi gửi lại; không hứa “exactly once” ở phía email. `claim` ngăn các lần gửi lặp trong điều kiện bình thường. Email chỉ dùng hộp thư thử, không có file, ghi chú nội bộ, token hay dữ liệu nhạy cảm.
 
@@ -255,4 +255,4 @@ Backend đánh giá rule và kiểm tra quyền/trạng thái; n8n chỉ điều
 5. Hai người thao tác cùng version: một giao dịch thắng, giao dịch còn lại 409; UI tải lại chi tiết và yêu cầu người dùng quyết định tiếp.
 6. Reporter đổi UUID incident/file của người khác: 404 không lộ nội dung; manager khác bộ phận cũng 404. User có thể xem incident nhưng không được đóng nhận 403.
 
-Các ca nghiệm thu chi tiết T01–T18 nằm trong [kế hoạch kiểm thử](test-plan.md). Trước khi coi contract đã được triển khai, test phải đối chiếu request/response thực với bảng này và OpenAPI của FastAPI, đặc biệt payload lỗi, idempotency, quyền bản ghi và giao dịch DB/outbox.
+Các ca T01–T18 ở [kế hoạch kiểm thử](test-plan.md). Test API cần đối chiếu response thực với contract và OpenAPI, nhất là lỗi, idempotency, quyền theo bản ghi và transaction DB/outbox.

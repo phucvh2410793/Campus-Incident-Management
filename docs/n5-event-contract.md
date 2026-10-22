@@ -1,24 +1,12 @@
-# N5 — Hợp đồng Sự kiện (Event Envelope), Chữ ký Webhook và Cổng phát Event (Tuần 1)
+# N5 — Event contract, outbox và webhook
 
-**Vị trí:** N5 — n8n, outbox & thông báo  
-**Thời gian:** W1 (12/10/2026 – 18/10/2026)  
-**Mục tiêu hoàn thành:** Định nghĩa event envelope, signature và fixture `incident.reported/assigned/priority/escalation` từ contract. Cung cấp mẫu hợp lệ/sai/trùng và cổng phát event ổn định cho backend khác (`N2, N3, N4`).
+`backend/app/automation` chứa event schema, chữ ký HMAC, `EventPublisher`, mô hình bảng Outbox/Notification, repository và worker stub.
+JSON mẫu nằm ở `workflows/events`. N2, N3 và N4 phát event qua
+`EventPublisher`; N5 xử lý phần lưu trữ outbox, claim lease, retry và gửi event sang n8n.
 
----
+## 1. Event envelope
 
-## 1. Ranh giới trách nhiệm của N5
-
-- **Thư mục sở hữu:**
-  - `backend/app/automation`: Chứa schemas event, logic chữ ký HMAC, cổng phát event (`EventPublisher`), outbox worker (từ W2), client webhook n8n.
-  - `workflows`: Chứa kịch bản n8n JSON (`health-check.json`, các workflow tự động hóa, webhook triggers).
-  - `workflows/events`: Chứa các fixture JSON sự kiện độc lập.
-- **Ranh giới:** N5 **không** sửa code nghiệp vụ của N1 (auth/users), N2 (incidents/evidence), N3 (rules/SLA), N4 (assignments/workflow). Các mảng khác phát event thông qua cổng `EventPublisher` do N5 cung cấp.
-
----
-
-## 2. Cấu trúc Event Envelope chuẩn
-
-Tuân thủ nghiêm ngặt **Mục 6 của `docs/api-contract.md`**:
+Payload theo [API contract](api-contract.md):
 
 ```json
 {
@@ -31,97 +19,72 @@ Tuân thủ nghiêm ngặt **Mục 6 của `docs/api-contract.md`**:
 }
 ```
 
-### Chi tiết các trường:
+`event_id` là khóa idempotency; `request_id` dùng để truy vết cùng request.
+`event_type` nhận `incident.reported`, `incident.assigned`,
+`incident.priority_changed` hoặc `sla.escalated`. Payload không chứa mô tả,
+file, comment nội bộ hay secret. n8n lấy metadata cần thiết qua `/internal/*`.
 
-| Trường | Kiểu | Mô tả |
-| :--- | :--- | :--- |
-| `event_id` | UUID chuỗi | Mã định danh duy nhất của sự kiện, đóng vai trò khóa Idempotency cho n8n |
-| `event_type` | String Enum | Loại sự kiện: `incident.reported`, `incident.assigned`, `incident.priority_changed`, `sla.escalated` |
-| `incident_id` | UUID chuỗi | Mã sự cố liên quan |
-| `occurred_at` | ISO 8601 UTC | Thời điểm sự kiện phát sinh (định dạng `YYYY-MM-DDTHH:MM:SSZ`) |
-| `schema_version` | Integer | Phiên bản hợp đồng sự kiện (mặc định là `1`) |
-| `request_id` | UUID chuỗi | Khóa correlation tương ứng `X-Request-ID` để truy vết luồng xử lý |
+## 2. Chữ ký webhook
 
-> **Quy tắc bảo mật quan trọng:** Payload sự kiện **tuyệt đối không chứa** nội dung mô tả, file đính kèm, ghi chú nội bộ, mật khẩu hoặc dữ liệu nhạy cảm. Workflow n8n khi cần thông tin sẽ dùng Service Credential gọi ngược API nội bộ `/internal/*`. Schema được cấu hình `extra = "forbid"` để từ chối mọi trường lạ.
-
----
-
-## 3. Bảo mật Webhook và Chữ ký HMAC-SHA256
-
-Backend Dispatcher khi gửi sự kiện sang n8n Webhook (qua mạng nội bộ Docker) sẽ đính kèm 3 HTTP headers bắt buộc:
+Dispatcher gửi event với ba header:
 
 ```http
 X-CIM-Event-ID: d69996e8-ae76-44d4-a396-41694498feb3
-X-CIM-Timestamp: 1730539800
-X-CIM-Signature: sha256=a1b2c3d4e5f6... (hex HMAC-SHA256)
+X-CIM-Timestamp: 1793611800
+X-CIM-Signature: sha256=<HMAC-SHA256 hex>
 Content-Type: application/json
 ```
 
-### 3.1. Thuật toán ký
-1. Chuỗi cần ký: `<timestamp>.<raw_request_body>` (trong đó `timestamp` là Unix epoch tính bằng giây dạng số nguyên).
-2. Mã hóa HMAC-SHA256 với secret dùng chung ngoài Git (`WEBHOOK_HMAC_SECRET`).
-3. Giá trị header có tiền tố `sha256=`.
+Ký chuỗi `<timestamp>.<raw_request_body>` bằng HMAC-SHA256 với
+`WEBHOOK_HMAC_SECRET` nằm ngoài Git. `verify_webhook_request()` so sánh chữ ký
+bằng `hmac.compare_digest`, từ chối timestamp lệch quá 300 giây. Bên nhận dùng
+`event_id` để bỏ qua event lặp.
 
-### 3.2. Cơ chế xác thực & Chống tấn công Replay
-- Hàm `verify_webhook_request()` kiểm tra chữ ký bằng so sánh thời gian không đổi (`hmac.compare_digest`) để chống timing attack.
-- Kiểm tra độ lệch thời gian: n8n từ chối mọi sự kiện có timestamp lệch quá **300 giây (5 phút)** so với giờ hệ thống hiện tại (`expired_timestamp` hoặc `future_timestamp`).
-- `event_id` được lưu làm khóa Idempotency để chống xử lý lặp khi mạng retry.
+## 3. Lưu trữ Outbox và Transactional Publisher (W2)
 
----
+Để đảm bảo tính atomic giữa lưu dữ liệu sự cố và sự kiện gửi sang n8n:
+- N2 (tạo incident), N3 (SLA escalation), N4 (assignment) sử dụng `OutboxEventPublisher(session)` trong cùng database transaction.
+- Bảng `outbox_events` lưu sự kiện với trạng thái `pending`. Nếu n8n gặp sự cố, sự kiện vẫn được giữ an toàn trong database.
 
-## 4. Hướng dẫn sử dụng Cổng phát Event cho các mảng khác (N2, N3, N4)
-
-N5 đã cung cấp interface chuẩn tại `app.automation.publisher`. Khi các thành viên khác cần phát sự kiện, chỉ cần gọi như sau:
-
-### 4.1. Ví dụ cho N2 (Khi tạo Incident thành công trong transaction)
 ```python
-from app.automation import EventType, get_event_publisher
+from app.automation import OutboxEventPublisher, EventType
 
-# Trong transaction tạo incident của N2:
-publisher = get_event_publisher()
-event = publisher.create_and_publish(
+# Trong cùng transaction commit incident:
+publisher = OutboxEventPublisher(session)
+publisher.create_and_publish(
     event_type=EventType.INCIDENT_REPORTED,
     incident_id=incident.id,
     request_id=request_id,
 )
-# event.event_id được cam kết cùng transaction outbox
+session.commit()
 ```
 
-### 4.2. Ví dụ cho N4 (Khi phân công sự cố thành công)
-```python
-from app.automation import EventType, get_event_publisher
+## 4. Cơ chế Claim Lease, Retry và Backoff (W2)
 
-publisher = get_event_publisher()
-publisher.create_and_publish(
-    event_type=EventType.INCIDENT_ASSIGNED,
-    incident_id=incident.id,
-    request_id=request_id,
-)
-```
+Worker (`OutboxWorkerStub`) thực hiện chu kỳ xử lý:
+1. **Claim lease**: Lấy các bản ghi `status == 'pending'` (đến hạn `next_attempt_at`) hoặc `status == 'processing'` nhưng `lease_expires_at <= now` (worker trước bị crash hoặc quá hạn lease). Sử dụng `SELECT ... FOR UPDATE SKIP LOCKED` trên PostgreSQL.
+2. **Gán lease**: Cập nhật `status = 'processing'`, `lease_token = <worker_id>`, `lease_expires_at = now + lease_duration`, tăng `attempt_count`.
+3. **Dispatch**: Chuyển payload sang webhook n8n kèm chữ ký HMAC.
+4. **Complete hoặc Retry**:
+   - Thành công: Đánh dấu `status = 'done'`, xóa lease.
+   - Thất bại: Nếu `attempt_count < max_attempts`, chuyển về `pending` với exponential backoff (`next_attempt_at = now + base * 2^(attempt-1)`). Khi vượt quá số lần thử, chuyển thành `failed` (dead-letter).
+   - Admin retry: Endpoint `/admin/events/{id}/retry` cho phép phục hồi bản ghi `failed` về `pending` kèm lý do.
 
-### 4.3. Ví dụ cho N3 (Khi phát hiện quá hạn SLA trong Job kiểm tra)
-```python
-from app.automation import EventType, get_event_publisher
+## 5. Idempotency Khóa Thông Báo (`notifications`) (W2)
 
-publisher = get_event_publisher()
-publisher.create_and_publish(
-    event_type=EventType.SLA_ESCALATED,
-    incident_id=incident.id,
-    request_id=request_id,
-)
-```
+Bảng `notifications` bảo vệ chống gửi email trùng lặp:
+- Khóa duy nhất: `(event_id, kind, recipient_user_id)`.
+- Hàm `claim_notification` trả về `(notification, should_send)`:
+  - Nếu bản ghi chưa tồn tại: tạo mới với `status='pending'` và `should_send=True`.
+  - Nếu đã có bản ghi: trả về bản ghi hiện tại và `should_send=False`.
+- Hàm `complete_notification` ghi nhận kết quả: `sent`, `failed` hoặc `uncertain`. Các bản ghi `sent` và `uncertain` không được tự động gửi lại.
 
----
+## 6. Workflow n8n giả lập (`mock-event-receiver.json`) (W2)
 
-## 5. Danh mục Fixtures có sẵn
+Nằm tại `workflows/mock-event-receiver.json`, tiếp nhận webhook POST, kiểm tra envelope, và trả về HTTP 200 xác nhận kèm `run_id` giả lập.
 
-Các file JSON mẫu đặt tại thư mục `workflows/events/` để n8n và các bài test độc lập nạp trực tiếp:
+## 7. Fixture và kiểm thử
 
-1. [workflows/events/incident_reported.json](file:///c:/Users/Administrator/Desktop/Campus-Incident-Management/workflows/events/incident_reported.json): Mẫu sự kiện báo cáo sự cố hợp lệ.
-2. [workflows/events/incident_assigned.json](file:///c:/Users/Administrator/Desktop/Campus-Incident-Management/workflows/events/incident_assigned.json): Mẫu sự kiện đã phân công cán bộ hợp lệ.
-3. [workflows/events/incident_priority_changed.json](file:///c:/Users/Administrator/Desktop/Campus-Incident-Management/workflows/events/incident_priority_changed.json): Mẫu sự kiện điều chỉnh độ ưu tiên hợp lệ.
-4. [workflows/events/sla_escalated.json](file:///c:/Users/Administrator/Desktop/Campus-Incident-Management/workflows/events/sla_escalated.json): Mẫu sự kiện cảnh báo leo thang SLA hợp lệ.
-5. [workflows/events/samples_invalid.json](file:///c:/Users/Administrator/Desktop/Campus-Incident-Management/workflows/events/samples_invalid.json): 3 kịch bản lỗi (thiếu incident ID, sai event type, chứa trường nhạy cảm bị cấm).
-6. [workflows/events/samples_duplicate.json](file:///c:/Users/Administrator/Desktop/Campus-Incident-Management/workflows/events/samples_duplicate.json): Cặp sự kiện thử nghiệm Idempotency (gửi lại giống hệt vs xung đột nội dung).
-
-Bộ kiểm thử hoàn chỉnh tại [backend/tests/test_automation_events.py](file:///c:/Users/Administrator/Desktop/Campus-Incident-Management/backend/tests/test_automation_events.py) bảo đảm độ tin cậy và sự sẵn sàng cho W2 (Migration outbox & Webhook n8n).
+- Fixture JSON: `workflows/events/`
+- Test hợp đồng và signature: `backend/tests/test_automation_events.py`
+- Test outbox claim, retry và notification: `backend/tests/test_outbox_repository.py`

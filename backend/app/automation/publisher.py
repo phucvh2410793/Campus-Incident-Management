@@ -1,6 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
+
+from sqlalchemy.orm import Session
 
 from app.automation.schemas import EventEnvelope, EventType
 
@@ -74,7 +76,7 @@ class InMemoryEventPublisher:
             event_type=event_type,
             incident_id=incident_id,
             request_id=request_id,
-            occurred_at=occurred_at or datetime.now(timezone.utc),
+            occurred_at=occurred_at or datetime.now(UTC),
         )
         self.publish(envelope)
         return envelope
@@ -94,6 +96,41 @@ class InMemoryEventPublisher:
 
     def __len__(self) -> int:
         return len(self._events)
+
+
+class OutboxEventPublisher:
+    """Transactional Outbox event publisher implementation.
+
+    Saves domain event envelopes directly into the outbox table within the
+    caller's existing database transaction.
+    """
+
+    def __init__(self, session: Session) -> None:
+        from app.automation.repository import OutboxRepository
+
+        self.session = session
+        self.repo = OutboxRepository(session)
+
+    def publish(self, event: EventEnvelope) -> None:
+        self.repo.save_event(event)
+
+    def create_and_publish(
+        self,
+        event_type: EventType,
+        incident_id: uuid.UUID,
+        request_id: uuid.UUID,
+        occurred_at: datetime | None = None,
+        event_id: uuid.UUID | None = None,
+    ) -> EventEnvelope:
+        envelope = EventEnvelope(
+            event_id=event_id or uuid.uuid4(),
+            event_type=event_type,
+            incident_id=incident_id,
+            request_id=request_id,
+            occurred_at=occurred_at or datetime.now(UTC),
+        )
+        self.publish(envelope)
+        return envelope
 
 
 _active_publisher: EventPublisher = InMemoryEventPublisher()
