@@ -92,9 +92,9 @@ npm run build
 .venv/Scripts/alembic.exe current
 ```
 
-`alembic check` so sánh model với database; hiện báo bảng incident, attachment và
-idempotency vì N2 thêm migration ở W2. `scripts/verify-docker.ps1` cũng chạy
-lệnh này, nên dùng script đầy đủ sau khi có migration N2.
+`alembic check` so sánh model với database sau khi đã chạy migration N2-W2.
+Để seed 30 incident giả cho thử phân trang, tạo reporter demo trước rồi xem
+[hướng dẫn seed N2](incident-data-model.md#migration-và-seed-w2).
 
 Chỉ chạy kiểm tra downgrade trên database thử nghiệm riêng; không chạy trên dữ liệu nhóm đang dùng.
 

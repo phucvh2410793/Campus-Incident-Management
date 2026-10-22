@@ -4,7 +4,7 @@ Campus Incident Management là dự án nhóm xây dựng nền tảng web tiế
 
 Tên đề tài trong proposal: **Campus Incident Management**. Chuyên ngành: **Cyber Security**, University of Science and Technology of Hanoi (USTH).
 
-> **Trạng thái W1:** Đã có đăng nhập/session và RolePolicy, model và fixture incident, rule/SLA độc lập, hợp đồng workflow/event, wireframe và mock API N6–N7. Incident/file, workflow và outbox chưa có API hoặc migration nghiệp vụ; các phần đó thuộc những tuần tiếp theo. Docker Compose hiện chạy PostgreSQL và migration identity/session.
+> **Trạng thái hiện tại:** Nền W1 đã có đăng nhập/session, RolePolicy, model/fixture incident, rule/SLA độc lập, hợp đồng workflow/event và mock API N6–N7. N2-W2 đã thêm migration incident/attachment/idempotency và seed báo cáo giả. API incident/file, outbox và workflow nghiệp vụ vẫn thuộc các tuần tiếp theo.
 
 ## Tài liệu dự án
 
@@ -201,7 +201,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-docker.ps1
 
 PostgreSQL được truy cập trên máy qua `localhost:15432`; cổng trong mạng Docker vẫn là `5432`. Có thể đổi cổng máy qua `POSTGRES_PORT` trong `.env`. Compose tự chạy migration trước backend. Truy cập n8n lần đầu để tạo owner account. Backend đã có API đăng nhập/session nhưng chưa seed tài khoản demo; frontend W1 dùng wireframe và mock API, chưa nối luồng incident thật.
 
-**Đã xác minh Docker local:** PostgreSQL, backend, frontend và n8n healthy; image backend/frontend W1 build thành công. Migration identity/session chạy trên database test riêng và toàn bộ test backend qua. `alembic check` hiện liệt kê bảng incident/evidence/idempotency chưa có trong DB vì N2 W1 mới chốt model; migration các bảng này thuộc W2.
+Migration N2-W2 chạy sau identity/session. Có thể seed 30 incident giả để thử phân trang sau khi đã tạo reporter demo; xem [mô hình dữ liệu và cách seed](docs/incident-data-model.md#migration-và-seed-w2). Frontend W1 vẫn dùng mock, chưa nối API incident thật.
 
 Xem [hướng dẫn phát triển](docs/development.md) để chạy frontend/backend trực tiếp bằng Node.js 24/Python 3.14, kiểm thử, cấu hình proxy và xử lý lỗi. Compose hiện dùng dev server, chỉ dành cho localhost.
 
