@@ -25,7 +25,9 @@ def demo_passwords():
 
 def test_demo_seed_is_repeatable_and_matches_shared_principals(db_session, demo_passwords):
     principals = json.loads(
-        (Path(__file__).parents[2] / "docs" / "fixtures" / "principals.json").read_text()
+        (Path(__file__).parents[2] / "docs" / "fixtures" / "principals.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert {(str(id), name) for id, name in DEMO_DEPARTMENTS} == {
         (department["id"], department["name"]) for department in principals["departments"]
