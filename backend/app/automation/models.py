@@ -95,7 +95,9 @@ class Notification(Base):
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
     event_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     kind: Mapped[str] = mapped_column(sa.String(64), nullable=False)
-    recipient_user_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    recipient_user_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     status: Mapped[str] = mapped_column(
         sa.String(20), nullable=False, default="pending", server_default="pending"
     )

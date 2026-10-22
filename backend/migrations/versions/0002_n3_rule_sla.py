@@ -1,4 +1,3 @@
-
 """Add N3 rule versions, evaluations, and escalations."""
 
 import json
@@ -8,7 +7,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0002_n3_rule_sla"
-down_revision = "0001_identity"
+down_revision = "n3w2_merge_n2_n5"
 branch_labels = None
 depends_on = None
 
@@ -37,7 +36,7 @@ def upgrade() -> None:
     op.create_table(
         "rule_evaluations",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("incident_id", sa.Uuid(), nullable=False),
+        sa.Column("incident_id", sa.Uuid(), sa.ForeignKey("incidents.id"), nullable=False),
         sa.Column(
             "rule_version_id",
             sa.Uuid(),
@@ -78,8 +77,8 @@ def upgrade() -> None:
     op.create_table(
         "escalations",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("incident_id", sa.Uuid(), nullable=False),
-        sa.Column("level", sa.String(32), nullable=False),
+        sa.Column("incident_id", sa.Uuid(), sa.ForeignKey("incidents.id"), nullable=False),
+        sa.Column("level", sa.Integer(), nullable=False),
         sa.Column("priority", sa.String(8), nullable=False),
         sa.Column("deadline_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column(
@@ -89,6 +88,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
         sa.Column("reason", sa.Text(), nullable=False),
+        sa.CheckConstraint("level >= 1", name="ck_escalations_level_positive"),
         sa.UniqueConstraint(
             "incident_id",
             "level",
@@ -129,9 +129,8 @@ def upgrade() -> None:
             "severity": "high",
             "priority": "p1",
             "department": "Cơ sở vật chất",
-            "reason": (
-                "Nước gần điện cần ưu tiên cao; gắn cờ an toàn"
-            ),
+            "reason": "Nước gần điện cần ưu tiên cao; gắn cờ an toàn",
+            "safety_flags": ["near_electricity"],
         },
         {
             "rule_id": "R04",
