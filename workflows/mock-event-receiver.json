@@ -1,0 +1,139 @@
+{
+  "name": "Campus Incident Management - Mock Event Receiver (N5 W2)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "events",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e4b6d912-32a1-4567-8901-abcdef012345",
+      "name": "Webhook Receiver",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "cim-mock-events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.event_type }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $json.body.event_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "f5c7e023-43b2-5678-9012-bcdef0123456",
+      "name": "Validate Event Envelope",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"received\",\n  \"event_id\": \"{{ $json.body.event_id }}\",\n  \"event_type\": \"{{ $json.body.event_type }}\",\n  \"run_id\": \"mock-run-001\",\n  \"message\": \"Mock payload accepted\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-5678-9012-3456-cdef01234567",
+      "name": "Acknowledge Event (200 OK)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        500,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"error\",\n  \"error_code\": \"invalid_payload\",\n  \"message\": \"Missing event_id or event_type in envelope\"\n}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "b2c3d4e5-6789-0123-4567-def012345678",
+      "name": "Reject Invalid Event (422)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        500,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Receiver": {
+      "main": [
+        [
+          {
+            "node": "Validate Event Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Event Envelope": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Event (200 OK)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Invalid Event (422)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {
+    "Webhook Receiver": [
+      {
+        "headers": {
+          "host": "localhost:5678",
+          "content-type": "application/json",
+          "x-cim-event-id": "d69996e8-ae76-44d4-a396-41694498feb3",
+          "x-cim-timestamp": "1793611800",
+          "x-cim-signature": "sha256=mocked_signature_for_test"
+        },
+        "params": {},
+        "query": {},
+        "body": {
+          "event_id": "d69996e8-ae76-44d4-a396-41694498feb3",
+          "event_type": "incident.reported",
+          "incident_id": "2ee24992-34d3-4955-9e5c-f7446fd42393",
+          "occurred_at": "2026-11-02T09:30:00Z",
+          "schema_version": 1,
+          "request_id": "9c23fa93-756a-45c7-805b-96d9094b908d"
+        }
+      }
+    ]
+  },
+  "id": "CIMMockEventReceiver001"
+}

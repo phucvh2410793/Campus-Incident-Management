@@ -1,10 +1,10 @@
-# N5 — Event contract và webhook
+# N5 — Event contract, outbox và webhook
 
-`backend/app/automation` chứa event schema, chữ ký HMAC và `EventPublisher`.
+`backend/app/automation` chứa event schema, chữ ký HMAC, `EventPublisher`, mô hình bảng Outbox/Notification, repository và worker stub.
 JSON mẫu nằm ở `workflows/events`. N2, N3 và N4 phát event qua
-`EventPublisher`; N5 xử lý phần gửi event sang n8n.
+`EventPublisher`; N5 xử lý phần lưu trữ outbox, claim lease, retry và gửi event sang n8n.
 
-## Event envelope
+## 1. Event envelope
 
 Payload theo [API contract](api-contract.md):
 
@@ -24,7 +24,7 @@ Payload theo [API contract](api-contract.md):
 `incident.priority_changed` hoặc `sla.escalated`. Payload không chứa mô tả,
 file, comment nội bộ hay secret. n8n lấy metadata cần thiết qua `/internal/*`.
 
-## Chữ ký webhook
+## 2. Chữ ký webhook
 
 Dispatcher gửi event với ba header:
 
@@ -40,35 +40,51 @@ Ký chuỗi `<timestamp>.<raw_request_body>` bằng HMAC-SHA256 với
 bằng `hmac.compare_digest`, từ chối timestamp lệch quá 300 giây. Bên nhận dùng
 `event_id` để bỏ qua event lặp.
 
-## Phát event
+## 3. Lưu trữ Outbox và Transactional Publisher (W2)
 
-Ví dụ khi N2 tạo incident:
+Để đảm bảo tính atomic giữa lưu dữ liệu sự cố và sự kiện gửi sang n8n:
+- N2 (tạo incident), N3 (SLA escalation), N4 (assignment) sử dụng `OutboxEventPublisher(session)` trong cùng database transaction.
+- Bảng `outbox_events` lưu sự kiện với trạng thái `pending`. Nếu n8n gặp sự cố, sự kiện vẫn được giữ an toàn trong database.
 
 ```python
-from app.automation import EventType, get_event_publisher
+from app.automation import OutboxEventPublisher, EventType
 
-publisher = get_event_publisher()
+# Trong cùng transaction commit incident:
+publisher = OutboxEventPublisher(session)
 publisher.create_and_publish(
     event_type=EventType.INCIDENT_REPORTED,
     incident_id=incident.id,
     request_id=request_id,
 )
+session.commit()
 ```
 
-N4 dùng `EventType.INCIDENT_ASSIGNED`; N3 dùng `EventType.SLA_ESCALATED`.
-`InMemoryEventPublisher` chỉ phục vụ test/mock. Khi có outbox, event phải được
-ghi trong cùng DB transaction với thay đổi incident; gọi hàm trên một mình
-không bảo đảm tính atomic.
+## 4. Cơ chế Claim Lease, Retry và Backoff (W2)
 
-## Fixture và test
+Worker (`OutboxWorkerStub`) thực hiện chu kỳ xử lý:
+1. **Claim lease**: Lấy các bản ghi `status == 'pending'` (đến hạn `next_attempt_at`) hoặc `status == 'processing'` nhưng `lease_expires_at <= now` (worker trước bị crash hoặc quá hạn lease). Sử dụng `SELECT ... FOR UPDATE SKIP LOCKED` trên PostgreSQL.
+2. **Gán lease**: Cập nhật `status = 'processing'`, `lease_token = <worker_id>`, `lease_expires_at = now + lease_duration`, tăng `attempt_count`.
+3. **Dispatch**: Chuyển payload sang webhook n8n kèm chữ ký HMAC.
+4. **Complete hoặc Retry**:
+   - Thành công: Đánh dấu `status = 'done'`, xóa lease.
+   - Thất bại: Nếu `attempt_count < max_attempts`, chuyển về `pending` với exponential backoff (`next_attempt_at = now + base * 2^(attempt-1)`). Khi vượt quá số lần thử, chuyển thành `failed` (dead-letter).
+   - Admin retry: Endpoint `/admin/events/{id}/retry` cho phép phục hồi bản ghi `failed` về `pending` kèm lý do.
 
-Các JSON trong `workflows/events/` dùng cho test và mock n8n:
+## 5. Idempotency Khóa Thông Báo (`notifications`) (W2)
 
-1. [incident_reported.json](../workflows/events/incident_reported.json)
-2. [incident_assigned.json](../workflows/events/incident_assigned.json)
-3. [incident_priority_changed.json](../workflows/events/incident_priority_changed.json)
-4. [sla_escalated.json](../workflows/events/sla_escalated.json)
-5. [samples_invalid.json](../workflows/events/samples_invalid.json): payload thiếu/sai field hoặc chứa dữ liệu không được phép.
-6. [samples_duplicate.json](../workflows/events/samples_duplicate.json): event gửi lặp và event ID trùng nhưng body khác.
+Bảng `notifications` bảo vệ chống gửi email trùng lặp:
+- Khóa duy nhất: `(event_id, kind, recipient_user_id)`.
+- Hàm `claim_notification` trả về `(notification, should_send)`:
+  - Nếu bản ghi chưa tồn tại: tạo mới với `status='pending'` và `should_send=True`.
+  - Nếu đã có bản ghi: trả về bản ghi hiện tại và `should_send=False`.
+- Hàm `complete_notification` ghi nhận kết quả: `sent`, `failed` hoặc `uncertain`. Các bản ghi `sent` và `uncertain` không được tự động gửi lại.
 
-Test ở [test_automation_events.py](../backend/tests/test_automation_events.py).
+## 6. Workflow n8n giả lập (`mock-event-receiver.json`) (W2)
+
+Nằm tại `workflows/mock-event-receiver.json`, tiếp nhận webhook POST, kiểm tra envelope, và trả về HTTP 200 xác nhận kèm `run_id` giả lập.
+
+## 7. Fixture và kiểm thử
+
+- Fixture JSON: `workflows/events/`
+- Test hợp đồng và signature: `backend/tests/test_automation_events.py`
+- Test outbox claim, retry và notification: `backend/tests/test_outbox_repository.py`
