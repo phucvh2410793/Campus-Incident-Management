@@ -199,7 +199,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-docker.ps1
 | Database readiness | http://localhost:8000/api/v1/health/ready |
 | n8n | http://localhost:5678 |
 
-PostgreSQL được truy cập trên máy qua `localhost:15432`; cổng trong mạng Docker vẫn là `5432`. Có thể đổi cổng máy qua `POSTGRES_PORT` trong `.env`. Compose tự chạy migration trước backend. Truy cập n8n lần đầu để tạo owner account. Backend đã có API đăng nhập/session nhưng chưa seed tài khoản demo; frontend W1 dùng wireframe và mock API, chưa nối luồng incident thật.
+PostgreSQL được truy cập trên máy qua `localhost:15432`; cổng trong mạng Docker vẫn là `5432`. Có thể đổi cổng máy qua `POSTGRES_PORT` trong `.env`. Compose tự chạy migration trước backend. Truy cập n8n lần đầu để tạo owner account. Tài khoản demo N1 được tạo bằng lệnh seed riêng trong [hướng dẫn phát triển](docs/development.md#seed-tài-khoản-demo-n1); frontend W1 dùng wireframe và mock API, chưa nối luồng incident thật.
 
 **Đã xác minh Docker local:** PostgreSQL, backend, frontend và n8n healthy; image backend/frontend W1 build thành công. Migration identity/session chạy trên database test riêng và toàn bộ test backend qua. `alembic check` hiện liệt kê bảng incident/evidence/idempotency chưa có trong DB vì N2 W1 mới chốt model; migration các bảng này thuộc W2.
 

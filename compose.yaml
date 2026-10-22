@@ -26,6 +26,21 @@ services:
         condition: service_healthy
     command: ["alembic", "upgrade", "head"]
 
+  seed-demo:
+    profiles: ["demo"]
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-campus}:${POSTGRES_PASSWORD:?Generate .env first}@postgres:5432/${POSTGRES_DB:-campus_incident_management}
+      CIM_DEMO_REPORTER_PASSWORD: ${CIM_DEMO_REPORTER_PASSWORD:-}
+      CIM_DEMO_HANDLER_PASSWORD: ${CIM_DEMO_HANDLER_PASSWORD:-}
+      CIM_DEMO_MANAGER_PASSWORD: ${CIM_DEMO_MANAGER_PASSWORD:-}
+      CIM_DEMO_ADMIN_PASSWORD: ${CIM_DEMO_ADMIN_PASSWORD:-}
+      CIM_DEMO_TRIAGE_MANAGER_PASSWORD: ${CIM_DEMO_TRIAGE_MANAGER_PASSWORD:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.auth.seed_demo"]
+
   backend:
     build: ./backend
     environment:

@@ -35,7 +35,29 @@ Compose chạy PostgreSQL, migration, backend rồi frontend; n8n chạy riêng.
 
 Cổng PostgreSQL trên máy là `15432`, trong Docker là `5432`. Nếu đổi `POSTGRES_PORT` trong `.env`, cập nhật cả `backend/.env` khi chạy backend trực tiếp.
 
-Frontend chạy bằng Vite dev server. n8n yêu cầu tạo owner account ở lần truy cập đầu tiên; ứng dụng chưa có tài khoản demo mặc định.
+Frontend chạy bằng Vite dev server. n8n yêu cầu tạo owner account ở lần truy cập đầu tiên. Tài khoản demo chỉ được tạo khi chạy lệnh seed riêng bên dưới.
+
+## Seed tài khoản demo N1
+
+Migration `154cfddf3634` đã tạo bảng `user_sessions`. Sau khi migrate, chạy seed riêng:
+
+```powershell
+docker compose --profile demo run --build --rm seed-demo
+```
+
+`scripts/init-env.ps1` tạo năm mật khẩu ngẫu nhiên trong `.env` (file này bị Git bỏ qua). Nếu `.env` đã tồn tại từ trước, thêm năm biến `CIM_DEMO_*_PASSWORD` theo `.env.example` và đặt **năm mật khẩu khác nhau**, mỗi mật khẩu tối thiểu 12 ký tự. Trên macOS/Linux, điền các biến này vào `.env` bằng giá trị từ `openssl rand -hex 32`. Không dùng chuỗi placeholder trong `.env.example` và không commit `.env`.
+
+Seed tạo bốn bộ phận và năm tài khoản giả với ID khớp `docs/fixtures/principals.json`:
+
+| Email đăng nhập | Vai trò | Bộ phận | Biến mật khẩu |
+| --- | --- | --- | --- |
+| `reporter@demo.invalid` | Reporter | — | `CIM_DEMO_REPORTER_PASSWORD` |
+| `handler@demo.invalid` | Handler | Cơ sở vật chất | `CIM_DEMO_HANDLER_PASSWORD` |
+| `manager@demo.invalid` | Department Manager | Điện và an toàn | `CIM_DEMO_MANAGER_PASSWORD` |
+| `admin@demo.invalid` | Administrator | — | `CIM_DEMO_ADMIN_PASSWORD` |
+| `triage.manager@demo.invalid` | Department Manager | Hàng đợi phân loại thủ công | `CIM_DEMO_TRIAGE_MANAGER_PASSWORD` |
+
+Chạy seed lần hai sẽ báo `0 departments and 0 users created`. ID và hash mật khẩu giữ nguyên. Seed dừng và rollback nếu ID/email hoặc mật khẩu cấu hình không khớp dữ liệu đã có; việc đổi mật khẩu tài khoản thuộc quy trình quản trị sau này. Lệnh này chỉ dành cho database demo; không chạy trên database thật.
 
 ## Frontend chạy trực tiếp
 
