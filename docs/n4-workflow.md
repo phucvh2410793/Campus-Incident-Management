@@ -31,15 +31,25 @@ text, không render HTML người nhập.
   cho N1/N2/N7 tham khảo. Principal/Incident chỉ là fixture, không thay model N1/N2.
 - `backend/tests/test_workflow_contracts.py`: test 25 cặp trạng thái cho manager
   và administrator, quyền handler, text bắt buộc, version và field lạ.
+- `backend/app/workflow/models.py` và `backend/app/comments/models.py`: bảng
+  assignment, comment, status history và audit. `actor_id` có thể trống với
+  thao tác tự động; comment luôn có người tạo.
+- `backend/app/workflow/repository.py` và `backend/app/comments/repository.py`:
+  ghi bản ghi, đọc theo incident; comment/history mặc định chỉ trả mục `public`.
+- `backend/migrations/versions/n4_w2_workflow.py`: migration N4 nối tiếp
+  `0002_n3_rule_sla`, có FK/index và chạy trong cùng chuỗi Alembic.
+- `backend/tests/test_workflow_storage.py`: kiểm tra schema, repository,
+  visibility, FK, rollback và Alembic head.
 
 `validate_transition()` kiểm tra cạnh và role trên dữ liệu đã qua kiểm tra phạm vi.
-Khi ghi DB, repository phải kiểm tra `expected_version` trong cùng transaction.
+Repository chưa thực hiện command nghiệp vụ; ở các tuần sau, service phải kiểm tra
+`expected_version` và ghi incident/history/audit/outbox trong cùng transaction.
 
 ## Khi tích hợp
 
-Migration assignment/comment/history/audit cần FK tới `incidents` và là revision
-riêng sau identity. N1 cung cấp Principal/Policy, N2 cung cấp incident/version,
-N3 xử lý SLA, N5 nhận event, N7 dùng request mẫu cho UI.
+N1 cung cấp Principal/Policy, N2 cung cấp incident/version, N3 xử lý SLA,
+N5 nhận event, N7 dùng request mẫu cho UI. Migration N4 đã nối sau các
+migration W2 của N2/N3/N5; không sửa các revision của mảng khác.
 
 Mỗi command phải ghi incident, history/audit và event cần thiết trong một
 transaction; thất bại không được ghi nửa chừng. Hai command cùng version: đúng

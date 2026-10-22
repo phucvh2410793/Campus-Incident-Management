@@ -38,13 +38,17 @@ class User(Base):
     )
 
 
-# Keep N2 mappings registered in Base.metadata for Alembic autogeneration.
+# Register all persistence models for Alembic autogeneration.
 from app.auth.models import Session as Session  # noqa: E402, F401
 from app.automation.models import Notification as Notification  # noqa: E402, F401
 from app.automation.models import OutboxEvent as OutboxEvent  # noqa: E402, F401
+from app.comments.models import Comment as Comment  # noqa: E402, F401
 from app.evidence.models import IncidentAttachment as IncidentAttachment  # noqa: E402, F401
 from app.incidents.models import IdempotencyRecord as IdempotencyRecord  # noqa: E402, F401
 from app.incidents.models import Incident as Incident  # noqa: E402, F401
 from app.rules.models import RuleEvaluation as RuleEvaluation  # noqa: E402, F401
 from app.rules.models import RuleVersion as RuleVersion  # noqa: E402, F401
 from app.sla.models import Escalation as Escalation  # noqa: E402, F401
+from app.workflow.models import Assignment as Assignment  # noqa: E402, F401
+from app.workflow.models import AuditLog as AuditLog  # noqa: E402, F401
+from app.workflow.models import StatusHistory as StatusHistory  # noqa: E402, F401
