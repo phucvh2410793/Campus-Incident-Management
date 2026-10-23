@@ -182,6 +182,15 @@ class N7StaffRoleMockApi {
     }
   }
 
+  /**
+   * Đặt lại dữ liệu mock về trạng thái ban đầu
+   */
+  public resetData(): void {
+    this.incidents = JSON.parse(JSON.stringify(INITIAL_MOCK_INCIDENTS))
+    this.history = JSON.parse(JSON.stringify(INITIAL_MOCK_HISTORY))
+    this.comments = JSON.parse(JSON.stringify(INITIAL_MOCK_COMMENTS))
+  }
+
   // ==========================================
   // HÀNG ĐỢI SỰ CỐ THEO VAI TRÒ (STAFF QUEUE)
   // ==========================================
@@ -196,8 +205,16 @@ class N7StaffRoleMockApi {
       priority?: Priority
       status?: Status
       search?: string
+      category?: string
+      assigned_handler_id?: string | null
+      triage_required?: boolean
+      sla_state?: 'safe' | 'warning' | 'overdue' | 'met' | 'unassigned'
     }
   ): Promise<IncidentResponse[]> {
+    if (user.role === 'reporter' || !['handler', 'department_manager', 'administrator'].includes(user.role)) {
+      throw ErrorPresets.forbidden('truy cập bảng điều khiển nhân viên')
+    }
+
     let list = this.incidents.filter((inc) => this.canRead(inc, user))
 
     // Bộ lọc tùy chọn
@@ -210,9 +227,28 @@ class N7StaffRoleMockApi {
     if (filters?.status) {
       list = list.filter((inc) => inc.status === filters.status)
     }
+    if (filters?.category) {
+      list = list.filter((inc) => inc.category === filters.category)
+    }
+    if (filters?.assigned_handler_id !== undefined) {
+      list = list.filter((inc) => inc.assigned_handler_id === filters.assigned_handler_id)
+    }
+    if (filters?.triage_required !== undefined) {
+      list = list.filter((inc) => inc.triage_required === filters.triage_required)
+    }
+    if (filters?.sla_state) {
+      list = list.filter((inc) => this.getSlaStatus(inc).state === filters.sla_state)
+    }
     if (filters?.search) {
       const q = filters.search.toLowerCase()
-      list = list.filter((inc) => inc.title.toLowerCase().includes(q) || inc.description.toLowerCase().includes(q))
+      list = list.filter(
+        (inc) =>
+          inc.id.toLowerCase().includes(q) ||
+          inc.title.toLowerCase().includes(q) ||
+          inc.description.toLowerCase().includes(q) ||
+          (inc.building && inc.building.toLowerCase().includes(q)) ||
+          (inc.location_detail && inc.location_detail.toLowerCase().includes(q))
+      )
     }
 
     return list

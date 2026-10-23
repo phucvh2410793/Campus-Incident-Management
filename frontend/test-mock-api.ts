@@ -111,6 +111,20 @@ async function main() {
   const sharedIncident = await mockApi.getIncident(admin, target.id)
   const sharedAssigned = await mockApi.assign(admin, sharedIncident.id, { expected_version: sharedIncident.version, department_id: 'dept-dien', handler_id: MOCK_USERS['user-handler-dien'].id, reason: 'Admin điều phối' })
   check('Mock UI: admin phân công xuyên bộ phận', sharedAssigned.department_id === 'dept-dien')
-  console.log('Đạt', passed, 'kiểm tra W1.')
+
+  // N7-W02: Kiểm tra bộ lọc, tìm kiếm và phân quyền hàng đợi
+  await rejectsCode('N7 W2: reporter bị 403 forbidden khi vào hàng đợi staff', () => staffApi.getStaffQueue(reporter), 'forbidden')
+  const waterLeakFiltered = await staffApi.getStaffQueue(admin, { category: 'water_leak' })
+  check('N7 W2: lọc hàng đợi theo category nước', waterLeakFiltered.length > 0 && waterLeakFiltered.every((i) => i.category === 'water_leak'))
+  const p1Filtered = await staffApi.getStaffQueue(admin, { priority: 'p1' })
+  check('N7 W2: lọc hàng đợi theo priority p1', p1Filtered.length > 0 && p1Filtered.every((i) => i.priority === 'p1'))
+  const inProgressFiltered = await staffApi.getStaffQueue(admin, { status: 'in_progress' })
+  check('N7 W2: lọc hàng đợi theo status in_progress', inProgressFiltered.length > 0 && inProgressFiltered.every((i) => i.status === 'in_progress'))
+  const searchFiltered = await staffApi.getStaffQueue(admin, { search: 'phòng thí nghiệm' })
+  check('N7 W2: tìm kiếm từ khóa trong tiêu đề/mô tả', searchFiltered.length > 0)
+  const overdueFiltered = await staffApi.getStaffQueue(admin, { sla_state: 'overdue' })
+  check('N7 W2: lọc hàng đợi theo SLA quá hạn', overdueFiltered.length > 0 && overdueFiltered.every((i) => staffApi.getSlaStatus(i).state === 'overdue'))
+
+  console.log('Đạt', passed, 'kiểm tra W1 & W2.')
 }
 main().catch((error) => { console.error(error); process.exitCode = 1 })
