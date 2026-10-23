@@ -167,7 +167,7 @@ export function StaffNavigationTabs({
           onClick={() => onSelectTab('admin-sla')}
         >
           <span className="tab-icon">🚨</span>
-          <span className="tab-text">Vi phạm SLA toàn viện</span>
+          <span className="tab-text">Cảnh báo SLA toàn viện</span>
           <span className={`tab-badge ${slaAlertsCount > 0 ? 'badge-crit' : ''}`}>
             {slaAlertsCount}
           </span>

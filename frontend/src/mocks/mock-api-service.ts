@@ -328,9 +328,7 @@ class MockApiService {
     if (currentUser.role === 'reporter') {
       list = list.filter((i) => i.reporter_id === currentUser.id)
     } else if (currentUser.role === 'handler') {
-      list = list.filter(
-        (i) => i.assigned_handler_id === currentUser.id || i.department_id === currentUser.department_id
-      )
+      list = list.filter((i) => i.assigned_handler_id === currentUser.id)
     } else if (currentUser.role === 'department_manager') {
       if (currentUser.department_id === 'dept-triage') {
         // Triage manager sees triage queue or items with triage_required
@@ -383,9 +381,7 @@ class MockApiService {
       throw ErrorPresets.notFound()
     }
     if (currentUser.role === 'handler') {
-      const isAssigned = found.assigned_handler_id === currentUser.id
-      const isSameDept = found.department_id === currentUser.department_id
-      if (!isAssigned && !isSameDept) {
+      if (found.assigned_handler_id !== currentUser.id) {
         throw ErrorPresets.notFound()
       }
     }

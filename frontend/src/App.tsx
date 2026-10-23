@@ -1,131 +1,89 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
+import { demoClient, type DemoSession } from './api/demo-client.ts'
+import { MOCK_USERS } from './mocks/mock-users.ts'
+import { ReporterHome } from './features/reporter-w2/ReporterHome.tsx'
 import { ReporterWireframeView } from './features/reporter-w1/ReporterWireframeView.tsx'
 import { StaffManagementView } from './features/staff/StaffManagementView.tsx'
 
-import { transitionGui } from './utils/transition.ts'
+type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/staff' | '/health'
+const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/staff', '/health']
 
-type AppTab = 'reporter' | 'staff' | 'health'
-
-type Health = 'checking' | 'online' | 'offline'
-const healthLabels: Record<Health, string> = {
-  checking: 'Đang kiểm tra API…',
-  online: 'API đang hoạt động',
-  offline: 'Chưa kết nối được API',
+function currentRoute(): Route {
+  const path = window.location.pathname
+  return routes.includes(path as Route) ? path as Route : '/login'
 }
 
-function FoundationHealthSection() {
-  const [health, setHealth] = useState<Health>('checking')
-  const [attempt, setAttempt] = useState(0)
+function HealthSection() {
+  const [state, setState] = useState<'loading' | 'online' | 'offline'>('loading')
+  const [revision, setRevision] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 5000)
     let active = true
+    const timeout = window.setTimeout(() => controller.abort(), 5000)
     fetch('/api/v1/health/live', { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error('API unavailable')
-        const data: unknown = await response.json()
-        if (typeof data !== 'object' || data === null || !('status' in data) || data.status !== 'ok') {
-          throw new Error('Invalid response')
-        }
-        if (active) setHealth('online')
+        if (!response.ok || (await response.json()).status !== 'ok') throw new Error('API unavailable')
+        if (active) setState('online')
       })
-      .catch(() => {
-        if (active) setHealth('offline')
-      })
+      .catch(() => { if (active) setState('offline') })
       .finally(() => window.clearTimeout(timeout))
-    return () => {
-      active = false
-      window.clearTimeout(timeout)
-      controller.abort()
-    }
-  }, [attempt])
+    return () => { active = false; controller.abort(); window.clearTimeout(timeout) }
+  }, [revision])
 
-  return (
-    <section aria-labelledby="foundation-heading" className="foundation-box">
-      <h2 id="foundation-heading">Kiểm tra kết nối API Nền tảng (FastAPI)</h2>
-      <p>
-        Kiểm tra tính sẵn sàng của backend FastAPI gốc qua proxy <code>/api/v1/health/live</code>.
-      </p>
-      <p role="status" aria-live="polite" className={`health ${health}`}>
-        {healthLabels[health]}
-      </p>
-      <button
-        type="button"
-        disabled={health === 'checking'}
-        className="btn btn-outline btn-sm"
-        onClick={() => {
-          setHealth('checking')
-          setAttempt((value) => value + 1)
-        }}
-      >
-        Kiểm tra lại kết nối HTTP
-      </button>
-      <p className="hint mt-2">
-        Kết nối API ở đây kiểm tra dịch vụ HTTP backend khi chạy Docker Compose. Các tính năng của
-        Task N6 và N7 chạy độc lập trên Mock API Adapter đúng contract.
-      </p>
-    </section>
-  )
+  return <section className="w2-panel"><h1>Kết nối backend</h1><p role="status">{state === 'loading' ? 'Đang kiểm tra…' : state === 'online' ? 'API hoạt động' : 'Không kết nối được API'}</p><button type="button" className="btn btn-outline" disabled={state === 'loading'} onClick={() => { setState('loading'); setRevision((value) => value + 1) }}>Kiểm tra lại</button></section>
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<AppTab>('reporter')
+  const [route, setRoute] = useState<Route>(currentRoute)
+  const [session, setSession] = useState<DemoSession | null>(demoClient.currentSession)
+  const [email, setEmail] = useState(MOCK_USERS['user-reporter'].email)
+  const [loginState, setLoginState] = useState<'idle' | 'loading' | 'error'>('idle')
 
-  return (
-    <div className="app-layout">
-      {/* Top Navbar */}
-      <header className="app-navbar">
-        <div className="navbar-brand">
-          <span className="brand-logo">🛡️ USTH</span>
-          <div className="brand-text">
-            <span className="brand-title">Hệ Thống Quản Lý Sự Cố Khuôn Viên</span>
-            <span className="brand-sub">Tiếp nhận và theo dõi an toàn, an ninh trong trường</span>
-          </div>
-        </div>
+  useEffect(() => {
+    const onPopState = () => setRoute(currentRoute())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
-        {/* Main Navigation Tabs */}
-        <nav className="navbar-nav">
-          <button
-            type="button"
-            className={`nav-link ${activeTab === 'reporter' ? 'active' : ''}`}
-            onClick={() => transitionGui(() => setActiveTab('reporter'))}
-          >
-            📐 Người Báo Cáo
-          </button>
-          <button
-            type="button"
-            className={`nav-link ${activeTab === 'staff' ? 'active' : ''}`}
-            onClick={() => transitionGui(() => setActiveTab('staff'))}
-          >
-            📋 Nhân Viên &amp; Quản Lý
-          </button>
-          <button
-            type="button"
-            className={`nav-link ${activeTab === 'health' ? 'active' : ''}`}
-            onClick={() => transitionGui(() => setActiveTab('health'))}
-          >
-            🔌 Kiểm Tra Kết Nối API
-          </button>
-        </nav>
-      </header>
+  const navigate = (path: Route) => { window.history.pushState({}, '', path); setRoute(path) }
+  const canReport = session?.user.role === 'reporter' || session?.user.role === 'administrator'
+  const canWork = !!session && session.user.role !== 'reporter'
+  const allowed = route === '/login' || route === '/health' ||
+    (route.startsWith('/reporter') ? canReport : canWork)
 
-      {/* Main Content Area */}
-      <main className="app-main-content">
-        <div key={activeTab} className="gui-fade-transition">
-          {activeTab === 'reporter' && <ReporterWireframeView />}
-          {activeTab === 'staff' && <StaffManagementView />}
-          {activeTab === 'health' && <FoundationHealthSection />}
-        </div>
-      </main>
+  const login = async () => {
+    setLoginState('loading')
+    try {
+      const next = await demoClient.login(email)
+      setSession(next)
+      setLoginState('idle')
+      navigate(next.user.role === 'reporter' ? '/reporter' : '/staff')
+    } catch { setLoginState('error') }
+  }
 
-      {/* Footer */}
-      <footer className="app-footer">
-        <p>
-          Hệ thống Quản lý Sự cố Khuôn viên · USTH Cyber Security
-        </p>
-      </footer>
-    </div>
-  )
+  const logout = () => { demoClient.logout(); setSession(null); navigate('/login') }
+
+  return <div className="app-layout">
+    <header className="app-navbar">
+      <div className="navbar-brand"><span className="brand-logo">CIM</span><div className="brand-text"><span className="brand-title">Campus Incident Management</span><span className="brand-sub">Tiếp nhận và xử lý sự cố khuôn viên</span></div></div>
+      <nav className="navbar-nav" aria-label="Điều hướng chính">
+        {canReport && <button type="button" className={`nav-link ${route === '/reporter' ? 'active' : ''}`} onClick={() => navigate('/reporter')}>Báo cáo của tôi</button>}
+        {canReport && <button type="button" className={`nav-link ${route === '/reporter/wireframe' ? 'active' : ''}`} onClick={() => navigate('/reporter/wireframe')}>Mẫu giao diện báo cáo</button>}
+        {canWork && <button type="button" className={`nav-link ${route === '/staff' ? 'active' : ''}`} onClick={() => navigate('/staff')}>Hàng đợi xử lý</button>}
+        <button type="button" className={`nav-link ${route === '/health' ? 'active' : ''}`} onClick={() => navigate('/health')}>Kết nối API</button>
+        {session && <button type="button" className="nav-link" onClick={logout}>Đăng xuất</button>}
+      </nav>
+    </header>
+    <main className="app-main-content">
+      {!allowed && <section className="w2-panel"><h1>Không có quyền truy cập</h1><p>Đăng nhập bằng tài khoản phù hợp để xem trang này.</p><button type="button" className="btn btn-primary" onClick={() => navigate('/login')}>Đến đăng nhập</button></section>}
+      {allowed && route === '/login' && <section className="w2-panel w2-login" aria-labelledby="login-heading"><p className="w2-kicker">Bản demo W2</p><h1 id="login-heading">Đăng nhập mô phỏng</h1><p>Chọn tài khoản mẫu để kiểm tra quyền và giao diện. Luồng này chưa gọi API đăng nhập thật.</p><label>Tài khoản<select value={email} onChange={(event) => setEmail(event.target.value)}>{Object.values(MOCK_USERS).map((user) => <option key={user.id} value={user.email}>{user.display_name}</option>)}</select></label><button type="button" className="btn btn-primary" disabled={loginState === 'loading'} onClick={login}>{loginState === 'loading' ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>{loginState === 'error' && <p role="alert">Đăng nhập thất bại. Vui lòng thử lại.</p>}<p className="hint">Token demo chỉ giữ trong bộ nhớ; tải lại trang sẽ đăng xuất.</p></section>}
+      {allowed && route === '/reporter' && <ReporterHome />}
+      {allowed && route === '/reporter/wireframe' && <ReporterWireframeView />}
+      {allowed && route === '/staff' && session && <StaffManagementView key={session.user.id} user={session.user} />}
+      {allowed && route === '/health' && <HealthSection />}
+    </main>
+    <footer className="app-footer"><p>Campus Incident Management · USTH</p></footer>
+  </div>
 }

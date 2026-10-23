@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test:mock": "node --experimental-strip-types test-mock-api.ts",
+    "test:w2": "node --experimental-strip-types test-w2-client.ts",
     "preview": "vite preview"
   },
   "dependencies": {
