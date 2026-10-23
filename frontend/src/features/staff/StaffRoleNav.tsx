@@ -1,11 +1,9 @@
 import type { UserSummary } from '../../types/auth.ts'
-import { MOCK_USERS, DEPARTMENTS } from '../../mocks/mock-users.ts'
+import { DEPARTMENTS } from '../../mocks/mock-users.ts'
 import { N7_ROLE_PERMISSIONS } from '../../mocks/n7-role-mock-api.ts'
 
 interface StaffRoleNavProps {
   currentUser: UserSummary
-  selectedUserId: string
-  onSelectUser: (userId: string) => void
   isSimulatedError: boolean
   onToggleSimulatedError: () => void
   onRefresh: () => void
@@ -23,8 +21,6 @@ const roleBadgeLabels: Record<string, { label: string; className: string }> = {
 
 export function StaffRoleNav({
   currentUser,
-  selectedUserId,
-  onSelectUser,
   isSimulatedError,
   onToggleSimulatedError,
   onRefresh,
@@ -83,24 +79,6 @@ export function StaffRoleNav({
             </button>
           </div>
 
-          {/* Quick Role Switcher */}
-          <div className="role-switcher-box">
-            <label htmlFor="role-select" className="role-switcher-label">
-              Chuyển vai trò:
-            </label>
-            <select
-              id="role-select"
-              value={selectedUserId}
-              onChange={(e) => onSelectUser(e.target.value)}
-              className="input-select input-sm role-select"
-            >
-              {Object.entries(MOCK_USERS).map(([key, u]) => (
-                <option key={u.id} value={key}>
-                  [{roleBadgeLabels[u.role]?.label || u.role}] {u.display_name}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       </div>
 

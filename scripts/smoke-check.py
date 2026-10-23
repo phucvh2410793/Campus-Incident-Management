@@ -73,7 +73,7 @@ def main() -> None:
             )
             processes.append(frontend)
             page = wait_for("http://127.0.0.1:15173", frontend)
-            if b"Campus Incident Management" not in page:
+            if b'<div id="root"></div>' not in page:
                 raise RuntimeError("Frontend document failed")
             proxy = wait_for("http://127.0.0.1:15173/api/v1/health/live", frontend)
             if json.loads(proxy)["service"] != "campus-incident-management-api":

@@ -1,9 +1,7 @@
-import { useState, useEffect, useCallback, useTransition } from 'react'
+import { useState, useEffect } from 'react'
 import type { UserSummary } from '../../types/auth.ts'
 import type { IncidentResponse } from '../../types/incident.ts'
-import { MOCK_USERS } from '../../mocks/mock-users.ts'
 import { mockN7StaffRoleApi } from '../../mocks/n7-role-mock-api.ts'
-import { transitionGui } from '../../utils/transition.ts'
 
 import { StaffRoleNav } from './StaffRoleNav.tsx'
 import { StaffNavigationTabs, type NavTabKey } from './StaffNavigationTabs.tsx'
@@ -12,6 +10,7 @@ import { StaffQueueTable } from './StaffQueueTable.tsx'
 import { StaffLoadingSkeleton, StaffEmptyState, StaffErrorState } from './StaffStateFeedback.tsx'
 import { StaffIncidentDetailModal } from './StaffIncidentDetailModal.tsx'
 import { StaffWireframeView } from '../staff-w1/StaffWireframeView.tsx'
+import { matchesNavigationTab } from './matchesNavigationTab.ts'
 
 const initialFilters: StaffFiltersState = {
   search: '',
@@ -22,10 +21,16 @@ const initialFilters: StaffFiltersState = {
   sla_state: '',
 }
 
-export function StaffManagementView() {
+function defaultTabForRole(user: UserSummary): NavTabKey {
+  if (user.role === 'handler') return 'handler-my'
+  if (user.role === 'administrator') return 'admin-all'
+  if (user.department_id === 'dept-triage') return 'manager-triage'
+  return 'manager-dept-all'
+}
+
+export function StaffManagementView({ user }: { user: UserSummary }) {
   const [viewMode, setViewMode] = useState<'interactive' | 'wireframe'>('interactive')
-  const [selectedUserId, setSelectedUserId] = useState<string>('user-manager-csvc')
-  const [activeNavTabKey, setActiveNavTabKey] = useState<NavTabKey>('manager-dept-all')
+  const [activeNavTabKey, setActiveNavTabKey] = useState<NavTabKey>(() => defaultTabForRole(user))
   const [filters, setFilters] = useState<StaffFiltersState>(initialFilters)
 
   const [rawQueue, setRawQueue] = useState<IncidentResponse[]>([])
@@ -34,19 +39,8 @@ export function StaffManagementView() {
   const [isSimulatedError, setIsSimulatedError] = useState<boolean>(false)
   const [error, setError] = useState<{ isForbidden?: boolean; message?: string } | null>(null)
   const [selectedIncident, setSelectedIncident] = useState<IncidentResponse | null>(null)
-  const [, startTransition] = useTransition()
-
   const [refreshCounter, setRefreshCounter] = useState<number>(0)
-
-  const currentUser: UserSummary = MOCK_USERS[selectedUserId] || MOCK_USERS['user-manager-csvc']
-
-  // Đồng bộ tab mặc định theo vai trò khi đổi user
-  const getDefaultTabForRole = useCallback((user: UserSummary): NavTabKey => {
-    if (user.role === 'handler') return 'handler-my'
-    if (user.role === 'administrator') return 'admin-all'
-    if (user.department_id === 'dept-triage') return 'manager-triage'
-    return 'manager-dept-all'
-  }, [])
+  const currentUser = user
 
   // Effect nạp dữ liệu từ Mock API
   useEffect(() => {
@@ -97,12 +91,10 @@ export function StaffManagementView() {
         })
 
         if (!active) return
-        startTransition(() => {
-          setRawQueue(fullQueue)
-          setDisplayQueue(filtered)
-          setError(null)
-          setIsLoading(false)
-        })
+        setRawQueue(fullQueue)
+        setDisplayQueue(filtered.filter((incident) => matchesNavigationTab(incident, activeNavTabKey)))
+        setError(null)
+        setIsLoading(false)
       } catch (err: unknown) {
         if (!active) return
         const errObj = err as { error?: { code?: string; message?: string } }
@@ -119,7 +111,7 @@ export function StaffManagementView() {
     return () => {
       active = false
     }
-  }, [currentUser, filters, isSimulatedError, refreshCounter])
+  }, [currentUser, filters, isSimulatedError, refreshCounter, activeNavTabKey])
 
   // Xử lý làm mới dữ liệu
   const handleRefresh = () => {
@@ -127,42 +119,13 @@ export function StaffManagementView() {
     setRefreshCounter((v) => v + 1)
   }
 
-  // Xử lý chuyển vai trò người dùng
-  const handleSelectUser = (newUserId: string) => {
-    const newUser = MOCK_USERS[newUserId]
-    if (!newUser) return
-
-    setIsLoading(true)
-    transitionGui(() => {
-      setSelectedUserId(newUserId)
-      setActiveNavTabKey(getDefaultTabForRole(newUser))
-      setFilters(initialFilters)
-      setIsSimulatedError(false)
-      setSelectedIncident(null)
-    })
-  }
-
   // Xử lý chọn tab điều hướng
   const handleSelectNavTab = (tabKey: NavTabKey) => {
+    if (tabKey === activeNavTabKey) return
     setIsLoading(true)
-    transitionGui(() => {
-      setActiveNavTabKey(tabKey)
-
-      // Áp dụng bộ lọc nhanh tương ứng với tab điều hướng
-      if (tabKey === 'handler-my') {
-        setFilters((prev) => ({ ...prev, status: '', sla_state: '', search: '' }))
-      } else if (tabKey === 'handler-in-progress') {
-        setFilters((prev) => ({ ...prev, status: 'in_progress', sla_state: '' }))
-      } else if (tabKey === 'handler-completed') {
-        setFilters((prev) => ({ ...prev, status: 'resolved', sla_state: '' }))
-      } else if (tabKey === 'manager-dept-all' || tabKey === 'admin-all') {
-        setFilters(initialFilters)
-      } else if (tabKey === 'manager-unassigned' || tabKey === 'admin-unassigned') {
-        setFilters((prev) => ({ ...prev, status: 'reported', sla_state: '' }))
-      } else if (tabKey === 'manager-sla' || tabKey === 'admin-sla') {
-        setFilters((prev) => ({ ...prev, sla_state: 'overdue' }))
-      }
-    })
+    setActiveNavTabKey(tabKey)
+    setFilters({ ...initialFilters })
+    setSelectedIncident(null)
   }
 
   // Xử lý thay đổi từng trường bộ lọc
@@ -177,9 +140,7 @@ export function StaffManagementView() {
   // Đặt lại bộ lọc
   const handleResetFilters = () => {
     setIsLoading(true)
-    transitionGui(() => {
-      setFilters(initialFilters)
-    })
+    setFilters({ ...initialFilters })
   }
 
   // Đặt lại dữ liệu mẫu
@@ -194,8 +155,6 @@ export function StaffManagementView() {
       <div className="staff-view-wrapper">
         <StaffRoleNav
           currentUser={currentUser}
-          selectedUserId={selectedUserId}
-          onSelectUser={handleSelectUser}
           isSimulatedError={isSimulatedError}
           onToggleSimulatedError={() => {
             setIsLoading(true)
@@ -218,8 +177,6 @@ export function StaffManagementView() {
       {/* 1. Header phân quyền và thanh công cụ vai trò */}
       <StaffRoleNav
         currentUser={currentUser}
-        selectedUserId={selectedUserId}
-        onSelectUser={handleSelectUser}
         isSimulatedError={isSimulatedError}
         onToggleSimulatedError={() => {
           setIsLoading(true)
@@ -266,8 +223,6 @@ export function StaffManagementView() {
                 setIsSimulatedError(false)
                 handleRefresh()
               }}
-              onSwitchToManager={() => handleSelectUser('user-manager-csvc')}
-              onSwitchToHandler={() => handleSelectUser('user-handler-csvc')}
             />
           ) : displayQueue.length === 0 ? (
             <StaffEmptyState
