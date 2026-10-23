@@ -4,6 +4,7 @@ import { mockN7StaffRoleApi as staffApi } from './src/mocks/n7-role-mock-api.ts'
 import { mockApi } from './src/mocks/mock-api-service.ts'
 import { MOCK_USERS } from './src/mocks/mock-users.ts'
 import type { ContractError } from './src/types/incident.ts'
+import { reporterApiClient } from './src/features/reporter-w2/reporterApiClient.ts'
 
 let passed = 0
 function check(name: string, condition: unknown) {
@@ -124,6 +125,26 @@ async function main() {
   check('N7 W2: tìm kiếm từ khóa trong tiêu đề/mô tả', searchFiltered.length > 0)
   const overdueFiltered = await staffApi.getStaffQueue(admin, { sla_state: 'overdue' })
   check('N7 W2: lọc hàng đợi theo SLA quá hạn', overdueFiltered.length > 0 && overdueFiltered.every((i) => staffApi.getSlaStatus(i).state === 'overdue'))
+
+  // N6-W02: Xác thực, API client và quản lý Bearer token in memory
+  const loginRes = await reporterApi.login({ email: reporter.email, password: 'any' })
+  check('N6 W2: đăng nhập thành công trả về access_token và user', !!loginRes.access_token && loginRes.user.email === reporter.email)
+  const me = await reporterApi.getMe(loginRes.access_token)
+  check('N6 W2: GET /auth/me xác thực token hợp lệ', me.id === reporter.id)
+  await rejectsCode('N6 W2: từ chối token rỗng hoặc không tồn tại', () => reporterApi.getMe('invalid-token'), 'unauthenticated')
+  await rejectsCode('N6 W2: đăng nhập sai email bị 401', () => reporterApi.login({ email: 'sai@usth.edu.vn' }), 'invalid_credentials')
+  await reporterApi.logout(loginRes.access_token)
+  await rejectsCode('N6 W2: token đã logout bị thu hồi (401)', () => reporterApi.getMe(loginRes.access_token), 'unauthenticated')
+
+  // Kiểm tra API client giữ token thuần túy trong memory (không lưu storage)
+  await reporterApiClient.login({ email: reporter.email, password: 'any' })
+  check('N6 W2: API client xác thực và giữ token trong memory', reporterApiClient.isAuthenticated())
+  const myIncidents = await reporterApiClient.getMyIncidents()
+  check('N6 W2: API client lấy danh sách sự cố của reporter', Array.isArray(myIncidents) && myIncidents.every((i) => i.reporter_id === reporter.id))
+  const storageAudit = reporterApiClient.verifyStorageClean()
+  check('N6 W2: không lưu token vào storage/log theo tiêu chí hoàn thành', storageAudit.isClean)
+  await reporterApiClient.logout()
+  check('N6 W2: API client logout xóa sạch token khỏi memory', !reporterApiClient.isAuthenticated())
 
   console.log('Đạt', passed, 'kiểm tra W1 & W2.')
 }

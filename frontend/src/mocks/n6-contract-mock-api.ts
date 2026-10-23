@@ -8,10 +8,10 @@ import type {
   Status,
   FormAnswers,
   IncidentResponse,
-  IncidentSummary,
   HistoryItem,
   AttachmentSummary,
 } from '../types/incident.ts'
+import type { UserSummary, LoginRequest, LoginResponse } from '../types/auth.ts'
 import { INITIAL_MOCK_INCIDENTS, INITIAL_MOCK_HISTORY, INITIAL_MOCK_ATTACHMENTS } from './mock-incidents.ts'
 import { MOCK_USERS } from './mock-users.ts'
 import { ErrorPresets, createContractError } from './contract-errors.ts'
@@ -50,6 +50,73 @@ class N6ContractMockApi {
   private history: Record<string, HistoryItem[]> = JSON.parse(JSON.stringify(INITIAL_MOCK_HISTORY))
   private attachments: Record<string, AttachmentSummary[]> = JSON.parse(JSON.stringify(INITIAL_MOCK_ATTACHMENTS))
   private idempotencyStore: Map<string, { bodyHash: string; response: IncidentResponse; createdAt: number }> = new Map()
+  private activeSessions: Map<string, { userId: string; expiresAt: number; revoked: boolean }> = new Map()
+
+  // ==========================================
+  // XÁC THỰC VÀ PHIÊN BẢO MẬT (TASK N6-W02)
+  // Opaque Bearer Token - Lưu trong Memory
+  // ==========================================
+
+  /**
+   * POST /api/v1/auth/login
+   * Đăng nhập lấy Bearer token (theo contract: token lưu trong memory, không lưu vào storage)
+   */
+  async login(payload: LoginRequest): Promise<LoginResponse> {
+    if (!payload.email || !payload.email.trim()) {
+      throw ErrorPresets.invalidCredentials()
+    }
+    const user = Object.values(MOCK_USERS).find(
+      (u) => u.email.toLowerCase() === payload.email.trim().toLowerCase()
+    )
+    if (!user || !user.is_active) {
+      throw ErrorPresets.invalidCredentials()
+    }
+
+    // Token ngẫu nhiên, bí mật, chỉ trả bản gốc một lần
+    const token = 'usth-bearer-' + (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).substring(2))
+    const expiresAt = new Date(Date.now() + 8 * 3600 * 1000).toISOString()
+    this.activeSessions.set(token, {
+      userId: user.id,
+      expiresAt: Date.now() + 8 * 3600 * 1000,
+      revoked: false,
+    })
+
+    return {
+      access_token: token,
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      user,
+    }
+  }
+
+  /**
+   * GET /api/v1/auth/me
+   * Lấy thông tin người dùng từ Bearer token
+   */
+  async getMe(token: string): Promise<UserSummary> {
+    if (!token || !this.activeSessions.has(token)) {
+      throw ErrorPresets.unauthenticated()
+    }
+    const session = this.activeSessions.get(token)!
+    if (session.revoked || session.expiresAt < Date.now()) {
+      throw ErrorPresets.unauthenticated()
+    }
+    const user = Object.values(MOCK_USERS).find((u) => u.id === session.userId)
+    if (!user) throw ErrorPresets.unauthenticated()
+    return user
+  }
+
+  /**
+   * POST /api/v1/auth/logout
+   * Thu hồi phiên làm việc của token hiện tại
+   */
+  async logout(token: string): Promise<void> {
+    if (token && this.activeSessions.has(token)) {
+      const session = this.activeSessions.get(token)!
+      session.revoked = true
+      this.activeSessions.delete(token)
+    }
+  }
 
   // ==========================================
   // ENDPOINTS DÀNH CHO REPORTER (TASK N6)
@@ -184,58 +251,29 @@ class N6ContractMockApi {
 
   /**
    * GET /api/v1/incidents?my=true
-   * Danh sách báo cáo của người dùng (có phân trang opaque cursor)
+   * Danh sách báo cáo của người dùng (theo token hoặc reporterId)
    */
   async getMyIncidents(
-    reporterId = '22e09230-76fd-4638-a97f-96919031e40b',
-    params?: { category?: Category; status?: Status; limit?: number; cursor?: string }
-  ): Promise<PaginatedResult<IncidentSummary>> {
-    const limit = Math.min(params?.limit || 20, 100)
+    reporterIdOrToken = '22e09230-76fd-4638-a97f-96919031e40b',
+    params?: { category?: Category; status?: Status }
+  ): Promise<IncidentResponse[]> {
+    let resolvedReporterId = reporterIdOrToken
+    if (this.activeSessions.has(reporterIdOrToken)) {
+      const session = this.activeSessions.get(reporterIdOrToken)!
+      if (session.revoked || session.expiresAt < Date.now()) {
+        throw ErrorPresets.unauthenticated()
+      }
+      resolvedReporterId = session.userId
+    }
 
-    let filtered = this.incidents.filter((inc) => inc.reporter_id === reporterId)
+    let filtered = this.incidents.filter((inc) => inc.reporter_id === resolvedReporterId)
     if (params?.category) filtered = filtered.filter((inc) => inc.category === params.category)
     if (params?.status) filtered = filtered.filter((inc) => inc.status === params.status)
 
     // Sort reported_at DESC, id DESC
     filtered.sort((a, b) => new Date(b.reported_at).getTime() - new Date(a.reported_at).getTime())
 
-    let startIndex = 0
-    if (params?.cursor) {
-      try {
-        const decoded = atob(params.cursor)
-        const parsed = parseInt(decoded, 10)
-        if (!isNaN(parsed)) startIndex = parsed
-      } catch {
-        startIndex = 0
-      }
-    }
-
-    const items: IncidentSummary[] = filtered.slice(startIndex, startIndex + limit).map((inc) => {
-      const isOverdue =
-        !inc.acknowledged_at &&
-        !!inc.acknowledgment_deadline_at &&
-        Date.now() >= new Date(inc.acknowledgment_deadline_at).getTime()
-
-      return {
-        id: inc.id,
-        version: inc.version,
-        category: inc.category,
-        title: inc.title,
-        status: inc.status,
-        priority: inc.priority,
-        triage_required: inc.triage_required,
-        department_id: inc.department_id,
-        department_name: inc.department_name,
-        reported_at: inc.reported_at,
-        acknowledgment_deadline_at: inc.acknowledgment_deadline_at,
-        overdue: isOverdue,
-      }
-    })
-
-    const nextIndex = startIndex + limit
-    const next_cursor = nextIndex < filtered.length ? btoa(nextIndex.toString()) : null
-
-    return { items, next_cursor, total: filtered.length }
+    return filtered
   }
 
   /**
