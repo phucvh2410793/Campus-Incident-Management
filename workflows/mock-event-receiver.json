@@ -22,22 +22,41 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.body.event_type }}",
-              "operation": "isNotEmpty"
+              "id": "09af2369-6172-416e-9c1b-5c59c1ebbc74",
+              "leftValue": "={{ typeof $json.body?.event_type === 'string' ? $json.body.event_type.trim() : '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             },
             {
-              "value1": "={{ $json.body.event_id }}",
-              "operation": "isNotEmpty"
+              "id": "cf8e8c8f-3956-4a69-9d16-8583b3267abf",
+              "leftValue": "={{ typeof $json.body?.event_id === 'string' ? $json.body.event_id.trim() : '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "f5c7e023-43b2-5678-9012-bcdef0123456",
       "name": "Validate Event Envelope",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
+      "typeVersion": 2.2,
       "position": [
         240,
         0
