@@ -10,7 +10,6 @@ import { StaffQueueTable } from './StaffQueueTable.tsx'
 import { StaffLoadingSkeleton, StaffEmptyState, StaffErrorState } from './StaffStateFeedback.tsx'
 import { StaffIncidentDetailModal } from './StaffIncidentDetailModal.tsx'
 import { StaffWireframeView } from '../staff-w1/StaffWireframeView.tsx'
-import { matchesNavigationTab } from './matchesNavigationTab.ts'
 
 const initialFilters: StaffFiltersState = {
   search: '',
@@ -19,6 +18,7 @@ const initialFilters: StaffFiltersState = {
   category: '',
   department_id: '',
   sla_state: '',
+  triage: '',
 }
 
 function defaultTabForRole(user: UserSummary): NavTabKey {
@@ -41,6 +41,24 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
   const [selectedIncident, setSelectedIncident] = useState<IncidentResponse | null>(null)
   const [refreshCounter, setRefreshCounter] = useState<number>(0)
   const currentUser = user
+
+  // Trạng thái Cursor Pagination
+  const [pageSize, setPageSize] = useState<number>(5)
+  const [currentCursor, setCurrentCursor] = useState<string | undefined>(undefined)
+  const [cursorStack, setCursorStack] = useState<string[]>([])
+  const [pageInfo, setPageInfo] = useState<{
+    currentPage: number
+    totalPages: number
+    total: number
+    nextCursor: string | null
+    prevCursor: string | null
+  }>({
+    currentPage: 1,
+    totalPages: 1,
+    total: 0,
+    nextCursor: null,
+    prevCursor: null,
+  })
 
   // Effect nạp dữ liệu từ Mock API
   useEffect(() => {
@@ -74,25 +92,39 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
       }
 
       try {
-        await new Promise((r) => setTimeout(r, 180))
+        await new Promise((r) => setTimeout(r, 120))
         if (!active) return
 
         // 1. Lấy toàn bộ hàng đợi cho người dùng này để tính counter trên nav tabs
         const fullQueue = await mockN7StaffRoleApi.getStaffQueue(currentUser)
 
-        // 2. Lấy danh sách đã áp dụng bộ lọc từ Mock API
-        const filtered = await mockN7StaffRoleApi.getStaffQueue(currentUser, {
+        // 2. Chuyển đổi triage sang boolean nếu có
+        const triageBool = filters.triage === 'true' ? true : filters.triage === 'false' ? false : undefined
+
+        // 3. Lấy dữ liệu phân trang theo cursor từ Mock API
+        const paginatedResult = await mockN7StaffRoleApi.getStaffQueueWithCursor(currentUser, {
           department_id: filters.department_id || undefined,
           priority: filters.priority || undefined,
           status: filters.status || undefined,
           category: filters.category || undefined,
           search: filters.search || undefined,
           sla_state: filters.sla_state || undefined,
+          triage_required: triageBool,
+          tab: activeNavTabKey,
+          cursor: currentCursor,
+          limit: pageSize,
         })
 
         if (!active) return
         setRawQueue(fullQueue)
-        setDisplayQueue(filtered.filter((incident) => matchesNavigationTab(incident, activeNavTabKey)))
+        setDisplayQueue(paginatedResult.items)
+        setPageInfo({
+          currentPage: paginatedResult.current_page,
+          totalPages: paginatedResult.total_pages,
+          total: paginatedResult.total,
+          nextCursor: paginatedResult.next_cursor,
+          prevCursor: paginatedResult.prev_cursor,
+        })
         setError(null)
         setIsLoading(false)
       } catch (err: unknown) {
@@ -111,7 +143,7 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
     return () => {
       active = false
     }
-  }, [currentUser, filters, isSimulatedError, refreshCounter, activeNavTabKey])
+  }, [currentUser, filters, isSimulatedError, refreshCounter, activeNavTabKey, currentCursor, pageSize])
 
   // Xử lý làm mới dữ liệu
   const handleRefresh = () => {
@@ -124,23 +156,55 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
     if (tabKey === activeNavTabKey) return
     setIsLoading(true)
     setActiveNavTabKey(tabKey)
+    setCurrentCursor(undefined)
+    setCursorStack([])
     setFilters({ ...initialFilters })
     setSelectedIncident(null)
   }
 
-  // Xử lý thay đổi từng trường bộ lọc
+  // Xử lý thay đổi từng trường bộ lọc (reset trang về 1)
   const handleFilterChange = <K extends keyof StaffFiltersState>(
     key: K,
     value: StaffFiltersState[K]
   ) => {
     setIsLoading(true)
+    setCurrentCursor(undefined)
+    setCursorStack([])
     setFilters((prev) => ({ ...prev, [key]: value }))
   }
 
   // Đặt lại bộ lọc
   const handleResetFilters = () => {
     setIsLoading(true)
+    setCurrentCursor(undefined)
+    setCursorStack([])
     setFilters({ ...initialFilters })
+  }
+
+  // Đổi số lượng phần tử mỗi trang
+  const handlePageSizeChange = (newSize: number) => {
+    setIsLoading(true)
+    setPageSize(newSize)
+    setCurrentCursor(undefined)
+    setCursorStack([])
+  }
+
+  // Chuyển trang sau
+  const handleNextPage = () => {
+    if (!pageInfo.nextCursor) return
+    setIsLoading(true)
+    setCursorStack((prev) => [...prev, currentCursor || ''])
+    setCurrentCursor(pageInfo.nextCursor)
+  }
+
+  // Chuyển trang trước
+  const handlePrevPage = () => {
+    if (cursorStack.length === 0 && !pageInfo.prevCursor) return
+    setIsLoading(true)
+    const prevStack = [...cursorStack]
+    const lastCursor = prevStack.pop()
+    setCursorStack(prevStack)
+    setCurrentCursor(lastCursor || undefined)
   }
 
   // Đặt lại dữ liệu mẫu
@@ -186,6 +250,8 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
         onResetData={handleResetData}
         viewMode={viewMode}
         onToggleViewMode={setViewMode}
+        incidents={rawQueue}
+        onSelectIncident={(inc) => setSelectedIncident(inc)}
       />
 
       {/* 2. Menu điều hướng theo vai trò (Role Navigation) */}
@@ -207,7 +273,7 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
             onFilterChange={handleFilterChange}
             onResetFilters={handleResetFilters}
             totalCount={rawQueue.length}
-            filteredCount={displayQueue.length}
+            filteredCount={pageInfo.total}
           />
         )}
 
@@ -232,16 +298,75 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
                 filters.priority ||
                 filters.category ||
                 filters.sla_state ||
+                filters.triage ||
                 (currentUser.role === 'administrator' && filters.department_id)
               )}
               onResetFilters={handleResetFilters}
               onRefresh={handleRefresh}
             />
           ) : (
-            <StaffQueueTable
-              incidents={displayQueue}
-              onSelectIncident={(inc) => setSelectedIncident(inc)}
-            />
+            <>
+              <StaffQueueTable
+                incidents={displayQueue}
+                onSelectIncident={(inc) => setSelectedIncident(inc)}
+              />
+
+              {/* Thanh điều khiển phân trang Cursor */}
+              <div className="sf-pagination-bar">
+                <div className="sf-pagination-left">
+                  <span className="sf-pagination-info">
+                    Trang <strong>{pageInfo.currentPage}</strong> / {pageInfo.totalPages} ({pageInfo.total} sự cố)
+                  </span>
+                  <span className="sf-preserved-state-tag" title="Vị trí và bộ lọc được bảo lưu nguyên vẹn khi xem chi tiết sự cố">
+                    ✓ Bảo lưu vị trí khi xem chi tiết
+                  </span>
+                </div>
+
+                <div className="sf-pagination-center">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline sf-page-btn"
+                    disabled={!pageInfo.prevCursor && cursorStack.length === 0}
+                    onClick={handlePrevPage}
+                  >
+                    ← Trang trước
+                  </button>
+
+                  <span className="sf-page-badge">
+                    Trang {pageInfo.currentPage}
+                  </span>
+
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline sf-page-btn"
+                    disabled={!pageInfo.nextCursor}
+                    onClick={handleNextPage}
+                  >
+                    Trang sau →
+                  </button>
+                </div>
+
+                <div className="sf-pagination-right">
+                  <label className="sf-page-size-label">
+                    Hiển thị:
+                    <select
+                      className="input-select sf-page-size-select"
+                      value={pageSize}
+                      onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                    >
+                      <option value={5}>5 / trang</option>
+                      <option value={10}>10 / trang</option>
+                      <option value={20}>20 / trang</option>
+                    </select>
+                  </label>
+                  {currentCursor && (
+                    <span className="sf-cursor-token-pill" title={`Cursor: ${currentCursor}`}>
+                      Cursor: #{currentCursor.substring(0, 8)}…
+                    </span>
+                  )}
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

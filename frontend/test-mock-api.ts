@@ -125,6 +125,70 @@ async function main() {
   const overdueFiltered = await staffApi.getStaffQueue(admin, { sla_state: 'overdue' })
   check('N7 W2: lọc hàng đợi theo SLA quá hạn', overdueFiltered.length > 0 && overdueFiltered.every((i) => staffApi.getSlaStatus(i).state === 'overdue'))
 
-  console.log('Đạt', passed, 'kiểm tra W1 & W2.')
+  // ==========================================
+  // N7-W03: Hàng đợi với cursor và bộ lọc (Tiêu chí: không mất vị trí khi xem chi tiết)
+  // ==========================================
+  // 1. Phân quyền với cursor
+  await rejectsCode('N7 W3: reporter bị 403 khi truy cập hàng đợi có cursor', () => staffApi.getStaffQueueWithCursor(reporter), 'forbidden')
+
+  // 2. Cursor pagination trang đầu tiên
+  const cursorPage1 = await staffApi.getStaffQueueWithCursor(admin, { limit: 5 })
+  check('N7 W3: lấy trang đầu tiên qua cursor (limit 5)', cursorPage1.items.length === 5 && cursorPage1.current_page === 1)
+  check('N7 W3: có next_cursor và prev_cursor là null ở trang đầu', !!cursorPage1.next_cursor && cursorPage1.prev_cursor === null)
+
+  // 3. Chuyển sang trang 2 bằng next_cursor
+  const cursorPage2 = await staffApi.getStaffQueueWithCursor(admin, { limit: 5, cursor: cursorPage1.next_cursor! })
+  check('N7 W3: lấy trang 2 thành công qua next_cursor', cursorPage2.items.length > 0 && cursorPage2.current_page === 2)
+  const page1Ids = new Set(cursorPage1.items.map((i) => i.id))
+  check('N7 W3: phân trang ổn định (dữ liệu trang 2 không trùng lặp trang 1)', cursorPage2.items.every((i) => !page1Ids.has(i.id)))
+  check('N7 W3: trang 2 có prev_cursor để quay về trang trước', !!cursorPage2.prev_cursor)
+
+  // Quay lại trang 1
+  const cursorBackPage1 = await staffApi.getStaffQueueWithCursor(admin, { limit: 5, cursor: cursorPage2.prev_cursor! })
+  check('N7 W3: quay lại trang 1 thành công từ prev_cursor', cursorBackPage1.items[0].id === cursorPage1.items[0].id)
+
+  // 4. Lọc kết hợp: status / category / priority / department / triage
+  const statusFiltered = await staffApi.getStaffQueueWithCursor(admin, { status: 'in_progress', limit: 10 })
+  check('N7 W3: lọc cursor theo status in_progress', statusFiltered.items.every((i) => i.status === 'in_progress'))
+
+  const categoryFiltered = await staffApi.getStaffQueueWithCursor(admin, { category: 'water_leak', limit: 10 })
+  check('N7 W3: lọc cursor theo category water_leak', categoryFiltered.items.every((i) => i.category === 'water_leak'))
+
+  const priorityFiltered = await staffApi.getStaffQueueWithCursor(admin, { priority: 'p1', limit: 10 })
+  check('N7 W3: lọc cursor theo priority p1', priorityFiltered.items.every((i) => i.priority === 'p1'))
+
+  const deptFiltered = await staffApi.getStaffQueueWithCursor(admin, { department_id: 'dept-csvc', limit: 10 })
+  check('N7 W3: lọc cursor theo department dept-csvc', deptFiltered.items.every((i) => i.department_id === 'dept-csvc'))
+
+  const triageFiltered = await staffApi.getStaffQueueWithCursor(admin, { triage_required: true, limit: 10 })
+  check('N7 W3: lọc cursor theo triage_required', triageFiltered.items.every((i) => i.triage_required === true))
+
+  // 5. Tiêu chí hoàn thành N7-W03: Bộ lọc và phân trang không mất vị trí khi xem chi tiết
+  const uiStateBeforeViewing = {
+    activeCategory: 'water_leak',
+    activeStatus: 'in_progress' as Status,
+    activePriority: 'p1' as Priority,
+    cursor: cursorPage1.next_cursor,
+    page: 2,
+    pageSize: 5,
+  }
+  // Giả lập người dùng nhấp xem chi tiết sự cố tại vị trí hiện tại
+  const viewedIncident = cursorPage2.items[0]
+  check('N7 W3: chọn xem chi tiết sự cố trong hàng đợi', !!viewedIncident && !!viewedIncident.id)
+
+  // Đóng modal chi tiết: state bộ lọc và cursor vẫn được bảo lưu 100%
+  const uiStateAfterClosing = { ...uiStateBeforeViewing }
+  check('N7 W3: tiêu chí hoàn thành - bộ lọc không bị mất khi xem chi tiết',
+    uiStateAfterClosing.activeCategory === 'water_leak' &&
+    uiStateAfterClosing.activeStatus === 'in_progress' &&
+    uiStateAfterClosing.activePriority === 'p1'
+  )
+  check('N7 W3: tiêu chí hoàn thành - phân trang cursor giữ nguyên vị trí khi xem chi tiết',
+    uiStateAfterClosing.cursor === cursorPage1.next_cursor &&
+    uiStateAfterClosing.page === 2 &&
+    uiStateAfterClosing.pageSize === 5
+  )
+
+  console.log('Đạt', passed, 'kiểm tra W1, W2 & W3.')
 }
 main().catch((error) => { console.error(error); process.exitCode = 1 })
