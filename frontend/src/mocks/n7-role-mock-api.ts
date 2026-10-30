@@ -104,6 +104,29 @@ export interface DispositionInput {
   duplicate_of_id?: string | null
 }
 
+export interface CursorPaginationParams {
+  limit?: number
+  cursor?: string
+  status?: Status
+  category?: string
+  priority?: Priority
+  department_id?: string
+  triage_required?: boolean
+  search?: string
+  sla_state?: 'safe' | 'warning' | 'overdue' | 'met' | 'unassigned'
+  tab?: string
+}
+
+export interface CursorPaginatedResult<T> {
+  items: T[]
+  next_cursor: string | null
+  prev_cursor: string | null
+  total: number
+  page_size: number
+  current_page: number
+  total_pages: number
+}
+
 class N7StaffRoleMockApi {
   private incidents: IncidentResponse[] = JSON.parse(JSON.stringify(INITIAL_MOCK_INCIDENTS))
   private history: Record<string, HistoryItem[]> = JSON.parse(JSON.stringify(INITIAL_MOCK_HISTORY))
@@ -263,6 +286,133 @@ class N7StaffRoleMockApi {
       throw ErrorPresets.forbidden('truy cập Hàng đợi Triage')
     }
     return this.incidents.filter((inc) => inc.department_id === 'dept-triage' && inc.triage_required)
+  }
+
+  /**
+   * Task N7-W03: Hàng đợi với Cursor Pagination & Bộ lọc nghiệp vụ
+   * GET /api/v1/incidents
+   */
+  async getStaffQueueWithCursor(
+    user: UserSummary,
+    params?: CursorPaginationParams
+  ): Promise<CursorPaginatedResult<IncidentResponse>> {
+    if (user.role === 'reporter' || !['handler', 'department_manager', 'administrator'].includes(user.role)) {
+      throw ErrorPresets.forbidden('truy cập bảng điều khiển nhân viên')
+    }
+
+    let list = this.incidents.filter((inc) => this.canRead(inc, user))
+
+    // 1. Lọc theo department
+    if (params?.department_id) {
+      list = list.filter((inc) => inc.department_id === params.department_id)
+    }
+
+    // 2. Lọc theo priority
+    if (params?.priority) {
+      list = list.filter((inc) => inc.priority === params.priority)
+    }
+
+    // 3. Lọc theo status
+    if (params?.status) {
+      list = list.filter((inc) => inc.status === params.status)
+    }
+
+    // 4. Lọc theo category
+    if (params?.category) {
+      list = list.filter((inc) => inc.category === params.category)
+    }
+
+    // 5. Lọc theo triage
+    if (params?.triage_required !== undefined) {
+      list = list.filter((inc) => inc.triage_required === params.triage_required)
+    }
+
+    // 6. Lọc theo SLA
+    if (params?.sla_state) {
+      list = list.filter((inc) => this.getSlaStatus(inc).state === params.sla_state)
+    }
+
+    // 7. Lọc theo search
+    if (params?.search && params.search.trim()) {
+      const q = params.search.toLowerCase().trim()
+      list = list.filter(
+        (inc) =>
+          inc.id.toLowerCase().includes(q) ||
+          inc.title.toLowerCase().includes(q) ||
+          inc.description.toLowerCase().includes(q) ||
+          (inc.building && inc.building.toLowerCase().includes(q)) ||
+          (inc.location_detail && inc.location_detail.toLowerCase().includes(q))
+      )
+    }
+
+    // 8. Lọc theo tab điều hướng nếu có
+    if (params?.tab) {
+      if (params.tab === 'handler-in-progress') list = list.filter((i) => i.status === 'in_progress')
+      else if (params.tab === 'handler-completed') list = list.filter((i) => i.status === 'resolved' || i.status === 'closed')
+      else if (params.tab === 'manager-unassigned' || params.tab === 'admin-unassigned') {
+        list = list.filter((i) => !i.assigned_handler_id && (i.status === 'reported' || i.status === 'assigned'))
+      } else if (params.tab === 'manager-triage' || params.tab === 'admin-triage') {
+        list = list.filter((i) => i.triage_required)
+      } else if (params.tab === 'manager-sla' || params.tab === 'admin-sla') {
+        list = list.filter((i) => ['overdue', 'warning'].includes(this.getSlaStatus(i).state))
+      }
+    }
+
+    // Sắp xếp ổn định theo contract: reported_at DESC, id DESC
+    list.sort((a, b) => {
+      const timeDiff = new Date(b.reported_at).getTime() - new Date(a.reported_at).getTime()
+      if (timeDiff !== 0) return timeDiff
+      return b.id.localeCompare(a.id)
+    })
+
+    const limit = Math.max(1, Math.min(params?.limit || 5, 100))
+    let startIndex = 0
+
+    const encodeCursor = (offset: number) => {
+      const payload = JSON.stringify({ offset, v: 1, ts: 1729000000 })
+      if (typeof btoa !== 'undefined') return btoa(payload)
+      const g = globalThis as { Buffer?: { from: (s: string, enc?: string) => { toString: (e: string) => string } } }
+      return g.Buffer?.from(payload, 'utf8').toString('base64') || payload
+    }
+
+    const decodeCursor = (cursorStr: string): number => {
+      try {
+        let decoded = ''
+        if (typeof atob !== 'undefined') {
+          decoded = atob(cursorStr)
+        } else {
+          const g = globalThis as { Buffer?: { from: (s: string, enc?: string) => { toString: (e: string) => string } } }
+          decoded = g.Buffer?.from(cursorStr, 'base64').toString('utf8') || ''
+        }
+        const parsed = JSON.parse(decoded) as { offset?: number }
+        return typeof parsed.offset === 'number' && parsed.offset >= 0 ? parsed.offset : 0
+      } catch {
+        return 0
+      }
+    }
+
+    if (params?.cursor) {
+      startIndex = decodeCursor(params.cursor)
+    }
+
+    const items = list.slice(startIndex, startIndex + limit)
+    const nextOffset = startIndex + limit
+    const prevOffset = Math.max(0, startIndex - limit)
+
+    const next_cursor = nextOffset < list.length ? encodeCursor(nextOffset) : null
+    const prev_cursor = startIndex > 0 ? encodeCursor(prevOffset) : null
+    const current_page = Math.floor(startIndex / limit) + 1
+    const total_pages = Math.max(1, Math.ceil(list.length / limit))
+
+    return {
+      items,
+      next_cursor,
+      prev_cursor,
+      total: list.length,
+      page_size: limit,
+      current_page,
+      total_pages,
+    }
   }
 
   // ==========================================
