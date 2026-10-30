@@ -79,14 +79,24 @@ def test_conflicting_phishing_answer_does_not_get_low_priority():
 
 
 def test_same_input_and_version_produce_same_result():
-    category = "electrical_hazard"
     answers = {
         "exposed_wire": "yes",
         "smoke_or_sparks": "yes",
     }
+    original_answers = answers.copy()
 
-    first = evaluate_incident(category, answers)
-    second = evaluate_incident(category, answers)
+    reordered_answers = {
+        "smoke_or_sparks": "yes",
+        "exposed_wire": "yes",
+    }
+
+    first = evaluate_incident("electrical_hazard", answers)
+    second = evaluate_incident("electrical_hazard", reordered_answers)
 
     assert first.rule_version == second.rule_version == "demo-v1"
     assert first.model_dump(mode="json") == second.model_dump(mode="json")
+    assert answers == original_answers
+    assert reordered_answers == {
+        "smoke_or_sparks": "yes",
+        "exposed_wire": "yes",
+    }
