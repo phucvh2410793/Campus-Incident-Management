@@ -3,7 +3,6 @@ from pathlib import Path
 
 from app.rules.engine import evaluate_incident
 
-
 FIXTURE_PATH = Path(__file__).parents[2] / "docs" / "fixtures" / "n3_cases.json"
 
 
