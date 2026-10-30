@@ -83,8 +83,35 @@ Bảng `notifications` bảo vệ chống gửi email trùng lặp:
 
 Nằm tại `workflows/mock-event-receiver.json`, tiếp nhận webhook POST, kiểm tra envelope, và trả về HTTP 200 xác nhận kèm `run_id` giả lập.
 
-## 7. Fixture và kiểm thử
+## 7. Service Bearer Authentication `/internal/*` (W3)
+
+Để n8n gọi ngược lại backend thực hiện các thao tác xử lý nghiệp vụ (`/internal/*`) mà không dùng token người dùng:
+- n8n sử dụng **Service Bearer Token** riêng biệt (`Authorization: Bearer <service_token>`).
+- Cấu hình bí mật ngoài Git: `CIM_INTERNAL_SERVICE_BEARER_TOKENS` (danh sách token) hoặc `CIM_INTERNAL_SERVICE_TOKEN_HASHES` (danh sách hash SHA-256).
+- **Lưu hash token và hỗ trợ xoay vòng (rotation):** Backend không lưu token thô trong bộ nhớ/DB mà chỉ lưu hash SHA-256, so sánh hằng định thời gian (`hmac.compare_digest`). Trong quá trình xoay vòng token, nhiều token hash có thể cùng active để không làm gián đoạn request đang xử lý.
+- **Từ chối User Token:** Token người dùng (session của reporter, handler, manager, admin) tuyệt đối không được phép gọi các endpoint `/internal/*`. Khi phát hiện token người dùng, hệ thống từ chối với HTTP 403 Forbidden (`User tokens are not permitted to access internal endpoints`).
+- **Danh sách endpoint `/internal/*`:**
+  - `GET /internal/events/{event_id}`: Metadata tối thiểu cho event, không lộ mô tả/file/secret.
+  - `POST /internal/events/{event_id}/evaluate`: Đánh giá sự cố theo rule, idempotent.
+  - `POST /internal/events/{event_id}/complete`: Đánh dấu `done` hoặc `failed`, chặn chuyển trạng thái sai `done → failed`.
+  - `POST /internal/notifications/claim`: Đăng ký claim gửi thông báo với khóa duy nhất `(event_id, kind, recipient_user_id)`.
+  - `POST /internal/notifications/{id}/complete`: Ghi nhận trạng thái gửi `sent`, `failed` hoặc `uncertain`.
+  - `POST /internal/sla/check`: Kiểm tra SLA định kỳ cho job n8n.
+  - `POST /internal/webhooks/verify`: Endpoint xác thực webhook inbound bằng chữ ký HMAC và timestamp.
+
+## 8. HMAC Timestamp & Event ID ngoài Git (W3)
+
+- Bí mật HMAC được nạp từ biến môi trường ngoài Git (`CIM_WEBHOOK_HMAC_SECRET` hoặc `WEBHOOK_HMAC_SECRET`).
+- Hỗ trợ xoay vòng bí mật (`CIM_WEBHOOK_HMAC_SECRETS_ROTATION`).
+- `verify_webhook_request()` và dependency `require_valid_webhook_signature`:
+  - Từ chối chữ ký sai (`invalid_signature` -> 401).
+  - Từ chối timestamp quá hạn lệch quá 300 giây về quá khứ (`expired_timestamp` -> 401) hoặc tương lai (`future_timestamp` -> 401).
+  - Kiểm tra định dạng UUID của `X-CIM-Event-ID` (`invalid_event_id` -> 422).
+  - Kiểm tra đầy đủ header bắt buộc (`missing_headers` -> 400).
+
+## 9. Fixture và kiểm thử
 
 - Fixture JSON: `workflows/events/`
-- Test hợp đồng và signature: `backend/tests/test_automation_events.py`
-- Test outbox claim, retry và notification: `backend/tests/test_outbox_repository.py`
+- Test hợp đồng và signature W1: `backend/tests/test_automation_events.py`
+- Test outbox claim, retry và notification W2: `backend/tests/test_outbox_repository.py`
+- Test service bearer auth, user token rejection, rotation và HMAC W3: `backend/tests/test_automation_service_bearer.py`

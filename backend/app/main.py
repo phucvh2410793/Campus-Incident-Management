@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth.router import router as auth_router
+from app.automation.router import router as internal_router
 from app.core.config import get_settings
 from app.db import engine
 
@@ -32,6 +33,9 @@ app = FastAPI(
 
 # Authentication routes: login and other auth endpoints.
 app.include_router(auth_router)
+
+# Internal service routes: n8n automation and callback endpoints (N5 ownership).
+app.include_router(internal_router)
 
 app.add_middleware(
     CORSMiddleware,
