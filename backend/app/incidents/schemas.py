@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -87,3 +88,32 @@ _INCIDENT_CREATE_ADAPTER = TypeAdapter(IncidentCreateRequest)
 def validate_incident_create(payload: object) -> IncidentCreateRequest:
     """Validate a create request without touching auth, database, or API routes."""
     return _INCIDENT_CREATE_ADAPTER.validate_python(payload)
+
+
+class IncidentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    version: int
+    category: str
+    title: str
+    description: str
+    building: str
+    location_detail: str | None
+    observed_at: datetime | None
+    answers: dict
+    reporter_id: UUID
+    status: str
+    triage_required: bool
+    severity: str | None
+    priority: str | None
+    department_id: UUID | None
+    assigned_handler_id: UUID | None
+    rule_evaluation: dict | None
+    reported_at: datetime
+    assigned_at: datetime | None
+    acknowledged_at: datetime | None
+    resolved_at: datetime | None
+    closed_at: datetime | None
+    acknowledgment_deadline_at: datetime | None
+    escalation_level: int
