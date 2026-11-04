@@ -59,3 +59,25 @@ reopen không tạo SLA tiếp nhận mới.
 Trước khi làm API phân công lại, bổ sung vào [API contract](api-contract.md)
 trạng thái được phép assign lại, đặc biệt `resolved` và `closed`, rồi viết test
 cho từng trường hợp.
+
+## W4 assignment
+
+Code: `backend/app/workflow/service.py`, `schemas.py`, `router.py`.
+Endpoint: `POST /api/v1/incidents/{incident_id}/assign`.
+Request: `department_id`, `handler_id` (UUID or null), nonempty `reason`,
+`expected_version`. Manager must own the current department; administrator
+can assign globally. Visible but unauthorized callers get 403, out-of-scope
+or missing incidents get the same 404. Input errors are 422; stale versions
+and invalid state transitions are 409. Responses include X-Request-ID.
+
+State rules and assignment history IDs are specified in the W4 review section
+of the API contract. Reassignment records a new Assignment and AuditLog but
+never invents a same-state StatusHistory. The endpoint commits once; service
+callers own their transaction. Assignment, incident/version, status history
+when applicable, audit and outbox are atomic. No acknowledgment is performed.
+
+Run `python -m pytest tests/test_assignment.py -q` from backend with project
+dependencies installed. SQLite service/API tests cover scope, validation,
+state/version handling, rollback and outbox contents. Shared row locks and
+simultaneous races still require PostgreSQL runtime verification; the SQLite
+checks do not prove PostgreSQL concurrency behavior.
