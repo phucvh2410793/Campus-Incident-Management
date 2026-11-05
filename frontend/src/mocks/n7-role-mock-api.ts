@@ -10,9 +10,10 @@ import type {
   IncidentResponse,
   HistoryItem,
   Comment,
+  AttachmentSummary,
 } from '../types/incident.ts'
 import { MOCK_USERS, DEPARTMENTS } from './mock-users.ts'
-import { INITIAL_MOCK_INCIDENTS, INITIAL_MOCK_HISTORY, INITIAL_MOCK_COMMENTS } from './mock-incidents.ts'
+import { INITIAL_MOCK_INCIDENTS, INITIAL_MOCK_HISTORY, INITIAL_MOCK_COMMENTS, INITIAL_MOCK_ATTACHMENTS } from './mock-incidents.ts'
 import { ErrorPresets } from './contract-errors.ts'
 
 // ==========================================
@@ -104,6 +105,28 @@ export interface DispositionInput {
   duplicate_of_id?: string | null
 }
 
+export interface AddCommentInput {
+  body: string
+  visibility: 'public' | 'internal'
+  expected_version?: number
+}
+
+export interface PermissionStatus {
+  role: string
+  isReporter: boolean
+  isAssignedHandler: boolean
+  isDepartmentManager: boolean
+  isAdmin: boolean
+  canViewInternalNotes: boolean
+  canAddInternalNotes: boolean
+  canAddPublicComments: boolean
+  canAcknowledge: boolean
+  canAssign: boolean
+  canResolve: boolean
+  canClose: boolean
+  canAdjustPriority: boolean
+}
+
 export interface CursorPaginationParams {
   limit?: number
   cursor?: string
@@ -131,11 +154,17 @@ class N7StaffRoleMockApi {
   private incidents: IncidentResponse[] = JSON.parse(JSON.stringify(INITIAL_MOCK_INCIDENTS))
   private history: Record<string, HistoryItem[]> = JSON.parse(JSON.stringify(INITIAL_MOCK_HISTORY))
   private comments: Record<string, Comment[]> = JSON.parse(JSON.stringify(INITIAL_MOCK_COMMENTS))
+  private attachments: Record<string, AttachmentSummary[]> = JSON.parse(JSON.stringify(INITIAL_MOCK_ATTACHMENTS))
 
   private canRead(incident: IncidentResponse, actor: UserSummary): boolean {
-    return actor.role === 'administrator' || (actor.role === 'handler'
-      ? incident.assigned_handler_id === actor.id
-      : actor.role === 'department_manager' && incident.department_id === actor.department_id)
+    if (actor.role === 'administrator') return true
+    if (actor.role === 'reporter') return incident.reporter_id === actor.id
+    if (actor.role === 'handler') return incident.assigned_handler_id === actor.id
+    if (actor.role === 'department_manager') {
+      if (actor.department_id === 'dept-triage') return incident.department_id === 'dept-triage' || incident.triage_required
+      return incident.department_id === actor.department_id
+    }
+    return false
   }
 
   private requireManager(incident: IncidentResponse, actor: UserSummary): void {
@@ -212,6 +241,7 @@ class N7StaffRoleMockApi {
     this.incidents = JSON.parse(JSON.stringify(INITIAL_MOCK_INCIDENTS))
     this.history = JSON.parse(JSON.stringify(INITIAL_MOCK_HISTORY))
     this.comments = JSON.parse(JSON.stringify(INITIAL_MOCK_COMMENTS))
+    this.attachments = JSON.parse(JSON.stringify(INITIAL_MOCK_ATTACHMENTS))
   }
 
   // ==========================================
@@ -725,6 +755,156 @@ class N7StaffRoleMockApi {
     if (!this.comments[id]) this.comments[id] = []
     this.comments[id].push(newComment)
     return newComment
+  }
+
+  // ==========================================
+  // N7-W04: CHI TIẾT, TIMELINE, FILE, PUBLIC/INTERNAL NOTE & TRẠNG THÁI QUYỀN
+  // ==========================================
+
+  /**
+   * GET /api/v1/incidents/:id
+   * Chi tiết sự cố có kiểm tra phân quyền (Reporter chỉ xem của mình, Staff xem theo phạm vi)
+   */
+  async getIncidentDetail(id: string, actor: UserSummary): Promise<IncidentResponse> {
+    const incident = this.incidents.find((inc) => inc.id === id)
+    if (!incident || !this.canRead(incident, actor)) {
+      throw ErrorPresets.notFound()
+    }
+    return JSON.parse(JSON.stringify(incident))
+  }
+
+  /**
+   * GET /api/v1/incidents/:id/history
+   * Timeline / Lịch sử sự cố:
+   * - Reporter: CHỈ xem các sự kiện công khai (visibility: 'public')
+   * - Staff / Admin: Xem toàn bộ timeline (bao gồm các sự kiện nội bộ 'internal')
+   */
+  async getIncidentHistory(id: string, actor: UserSummary): Promise<HistoryItem[]> {
+    const incident = this.incidents.find((inc) => inc.id === id)
+    if (!incident || !this.canRead(incident, actor)) {
+      throw ErrorPresets.notFound()
+    }
+    const allHistory = this.history[id] || []
+    if (actor.role === 'reporter') {
+      return allHistory.filter((item) => item.visibility === 'public')
+    }
+    return allHistory
+  }
+
+  /**
+   * GET /api/v1/incidents/:id/comments
+   * Danh sách bình luận & ghi chú:
+   * - Reporter: CHỈ xem ghi chú công khai (visibility: 'public'). KHÔNG LẪN ghi chú nội bộ!
+   * - Staff / Admin: Xem cả bình luận công khai và ghi chú nội bộ.
+   */
+  async getIncidentComments(id: string, actor: UserSummary): Promise<Comment[]> {
+    const incident = this.incidents.find((inc) => inc.id === id)
+    if (!incident || !this.canRead(incident, actor)) {
+      throw ErrorPresets.notFound()
+    }
+    const allComments = this.comments[id] || []
+    if (actor.role === 'reporter') {
+      return allComments.filter((c) => c.visibility === 'public')
+    }
+    return allComments
+  }
+
+  /**
+   * POST /api/v1/incidents/:id/comments
+   * Thêm bình luận công khai hoặc ghi chú nội bộ:
+   * - Reporter: CHỈ được thêm 'public'. Cố tình gửi 'internal' bị 403 Forbidden!
+   * - Staff / Admin: Được thêm cả 'public' và 'internal'.
+   */
+  async addComment(id: string, input: AddCommentInput, actor: UserSummary): Promise<Comment> {
+    const incident = this.incidents.find((inc) => inc.id === id)
+    if (!incident || !this.canRead(incident, actor)) {
+      throw ErrorPresets.notFound()
+    }
+
+    if (actor.role === 'reporter' && input.visibility === 'internal') {
+      throw ErrorPresets.forbidden('Người báo cáo (Reporter) không có quyền tạo ghi chú nội bộ.')
+    }
+
+    if (!input.body?.trim() || input.body.length > 2000) {
+      throw ErrorPresets.validationError([{ field: 'body', reason: 'Nội dung bình luận từ 1 đến 2000 ký tự.' }])
+    }
+
+    const nowIso = new Date().toISOString()
+    const newComment: Comment = {
+      id: crypto.randomUUID ? crypto.randomUUID() : 'cmt-' + Math.random().toString(36).slice(2) + Date.now(),
+      body: input.body.trim(),
+      visibility: input.visibility,
+      author_id: actor.id,
+      author_name: actor.display_name,
+      created_at: nowIso,
+    }
+
+    if (!this.comments[id]) this.comments[id] = []
+    this.comments[id].push(newComment)
+
+    // Ghi nhận vào timeline / lịch sử
+    if (!this.history[id]) this.history[id] = []
+    this.history[id].push({
+      id: crypto.randomUUID ? crypto.randomUUID() : 'hist-' + Math.random().toString(36).slice(2) + Date.now(),
+      action: input.visibility === 'internal' ? 'internal_note_added' : 'public_comment_added',
+      actor_display_name: actor.display_name,
+      visibility: input.visibility,
+      created_at: nowIso,
+      details: {
+        visibility: input.visibility,
+        snippet: input.body.slice(0, 80),
+      },
+    })
+
+    return newComment
+  }
+
+  /**
+   * GET /api/v1/incidents/:id/attachments
+   * Lấy danh sách tệp đính kèm bằng chứng của sự cố
+   */
+  async getIncidentAttachments(id: string, actor: UserSummary): Promise<AttachmentSummary[]> {
+    const incident = this.incidents.find((inc) => inc.id === id)
+    if (!incident || !this.canRead(incident, actor)) {
+      throw ErrorPresets.notFound()
+    }
+    return this.attachments[id] || []
+  }
+
+  /**
+   * Tính toán ma trận trạng thái quyền hạn của tài khoản đối với sự cố
+   */
+  getPermissionMatrix(incident: IncidentResponse, actor: UserSummary): PermissionStatus {
+    const isReporter = incident.reporter_id === actor.id
+    const isAssignedHandler = incident.assigned_handler_id === actor.id
+    const isDepartmentManager = actor.role === 'department_manager' && (incident.department_id === actor.department_id || actor.department_id === 'dept-triage')
+    const isAdmin = actor.role === 'administrator'
+
+    const canViewInternalNotes = actor.role !== 'reporter'
+    const canAddInternalNotes = actor.role !== 'reporter'
+    const canAddPublicComments = true
+
+    const canAcknowledge = (isAssignedHandler || isDepartmentManager || isAdmin) && incident.status === 'assigned'
+    const canAssign = isDepartmentManager || isAdmin
+    const canResolve = (isAssignedHandler || isDepartmentManager || isAdmin) && incident.status === 'in_progress'
+    const canClose = (isDepartmentManager || isAdmin) && incident.status === 'resolved'
+    const canAdjustPriority = isDepartmentManager || isAdmin
+
+    return {
+      role: actor.role,
+      isReporter,
+      isAssignedHandler,
+      isDepartmentManager,
+      isAdmin,
+      canViewInternalNotes,
+      canAddInternalNotes,
+      canAddPublicComments,
+      canAcknowledge,
+      canAssign,
+      canResolve,
+      canClose,
+      canAdjustPriority,
+    }
   }
 }
 

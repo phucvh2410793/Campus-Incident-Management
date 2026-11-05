@@ -2746,4 +2746,471 @@ code, kbd, samp, pre, .font-mono {
   font-weight: 600;
 }
 
+/* ==========================================================================
+   N7-W04: CHI TIẾT SỰ CỐ, TIMELINE, FILE, PUBLIC/INTERNAL NOTE & MA TRẬN QUYỀN
+   Tiêu chí: "Reporter view không lẫn staff view, note internal được đánh dấu rõ."
+   ========================================================================== */
+
+.modal-container-w4 {
+  max-width: 860px !important;
+  max-height: 92vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.modal-body-scrollable {
+  overflow-y: auto !important;
+  max-height: calc(92vh - 160px) !important;
+  padding: 18px 24px !important;
+}
+
+/* View Mode Switcher Pill in Modal Header */
+.view-mode-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--surface-muted);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 2px 4px;
+  gap: 4px;
+}
+
+.view-mode-label {
+  font-size: 0.725rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 0 4px 0 6px;
+}
+
+.btn-toggle-view {
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.btn-toggle-view:hover {
+  color: var(--text-primary);
+}
+
+.btn-toggle-view.active-staff {
+  background-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.3);
+}
+
+.btn-toggle-view.active-reporter {
+  background-color: #059669;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(5, 150, 105, 0.3);
+}
+
+.reporter-view-tag-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+}
+
+/* View Banners (Staff vs Reporter) */
+.view-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 24px;
+  font-size: 0.825rem;
+  line-height: 1.45;
+  border-bottom: 1px solid;
+}
+
+.view-banner-staff {
+  background-color: #eff6ff;
+  border-bottom-color: #bfdbfe;
+  color: #1e40af;
+}
+
+.view-banner-reporter {
+  background-color: #f0fdf4;
+  border-bottom-color: #bbf7d0;
+  color: #166534;
+}
+
+.view-banner-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.view-banner-text strong {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 2px;
+}
+
+/* Modal Sub-Navigation Strip */
+.modal-subnav-strip {
+  display: flex;
+  gap: 6px;
+  padding: 10px 24px 0;
+  background-color: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+}
+
+.modal-subnav-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 8px 14px;
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.modal-subnav-btn:hover {
+  color: var(--primary);
+}
+
+.modal-subnav-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* Tab Header Row & Description */
+.section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.tab-hint-desc {
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.empty-subtab-box {
+  text-align: center;
+  padding: 36px 16px;
+  color: var(--text-muted);
+  background-color: var(--surface-subtle);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+}
+
+/* Timeline Customizations */
+.timeline-body-internal {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+}
+
+.timeline-details-snippet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.detail-tag {
+  font-size: 0.725rem;
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* ==========================================================================
+   TIÊU CHÍ HOÀN THÀNH: NOTE INTERNAL ĐƯỢC ĐÁNH DẤU RÕ RÀNG
+   ========================================================================== */
+
+.note-internal-highlight {
+  background-color: #fffbeb !important;
+  border: 2px solid #f59e0b !important;
+  box-shadow: 0 2px 8px -2px rgba(245, 158, 11, 0.25) !important;
+}
+
+.internal-note-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.725rem;
+  font-weight: 700;
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #f59e0b;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+
+.internal-note-footer-notice {
+  color: #b45309;
+  font-size: 0.725rem;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #fde68a;
+}
+
+.note-public-box {
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.public-comment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.725rem;
+  font-weight: 600;
+  background-color: #e2e8f0;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.comment-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.comment-author-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comment-author-name {
+  font-weight: 700;
+  font-size: 0.825rem;
+  color: var(--text-primary);
+}
+
+.comment-time {
+  font-size: 0.725rem;
+  color: var(--text-muted);
+}
+
+.comment-body-text {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Comment Submission Form */
+.comment-form-container {
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.comment-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.radio-group-visibility {
+  display: flex;
+  gap: 12px;
+}
+
+.visibility-radio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.visibility-radio-label.internal-label {
+  color: #b45309;
+}
+
+.reporter-fixed-badge {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.internal-note-type-alert {
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+  font-size: 0.775rem;
+  color: #92400e;
+  margin-bottom: 8px;
+}
+
+.comment-textarea {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  resize: vertical;
+  min-height: 75px;
+  box-sizing: border-box;
+}
+
+.comment-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+
+.comment-form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.btn-warning-dark {
+  background-color: #d97706;
+  color: #ffffff;
+  border: none;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-warning-dark:hover:not(:disabled) {
+  background-color: #b45309;
+}
+
+.btn-warning-dark:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Attachments List */
+.attachments-grid-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease;
+}
+
+.attachment-card:hover {
+  border-color: var(--primary);
+}
+
+.att-icon-wrapper {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.att-info-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.att-filename {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.att-meta {
+  font-size: 0.725rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.btn-download-att {
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  padding: 6px 12px;
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.btn-download-att:hover {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+/* Permissions Matrix Tab */
+.permission-context-card {
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.perm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.perm-label {
+  font-size: 0.725rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.perm-val {
+  font-size: 0.825rem;
+  color: var(--text-primary);
+}
+
+.perm-matrix-table td {
+  padding: 10px 14px;
+  font-size: 0.825rem;
+}
+
+
 
