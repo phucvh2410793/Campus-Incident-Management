@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from app.sla.clock import FakeClock
-from app.sla.policy import calculate_deadline, should_escalate
+from app.sla.policy import (
+    calculate_deadline,
+    calculate_review_deadline,
+    should_alert_for_review,
+    should_escalate,
+)
 
 REPORTED_AT = datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
 SLA_CASES = json.loads(
@@ -114,3 +119,54 @@ def test_t12_commit_orders_match_shared_fixture():
         assert int(eligible) == order["expected_escalation_records"]
         results.append(int(eligible))
     assert max(results) == case["expected_max_escalation_records"]
+
+
+def test_review_deadline_is_15_minutes_after_report():
+    expected = REPORTED_AT + timedelta(minutes=15)
+
+    assert calculate_review_deadline(REPORTED_AT) == expected
+
+
+def test_review_alert_not_triggered_before_deadline():
+    now = REPORTED_AT + timedelta(minutes=14, seconds=59)
+
+    assert not should_alert_for_review(
+        REPORTED_AT,
+        now,
+        triage_required=True,
+    )
+
+
+def test_review_alert_triggered_at_deadline():
+    now = REPORTED_AT + timedelta(minutes=15)
+
+    assert should_alert_for_review(
+        REPORTED_AT,
+        now,
+        triage_required=True,
+    )
+
+
+def test_review_alert_triggered_after_deadline():
+    now = REPORTED_AT + timedelta(minutes=20)
+
+    assert should_alert_for_review(
+        REPORTED_AT,
+        now,
+        triage_required=True,
+    )
+
+
+def test_review_alert_not_triggered_when_triage_not_required():
+    now = REPORTED_AT + timedelta(hours=1)
+
+    assert not should_alert_for_review(
+        REPORTED_AT,
+        now,
+        triage_required=False,
+    )
+
+
+def test_review_deadline_rejects_naive_datetime():
+    with pytest.raises(ValueError):
+        calculate_review_deadline(datetime(2026, 11, 2, 9, 30))
