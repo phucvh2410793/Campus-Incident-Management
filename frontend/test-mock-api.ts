@@ -189,6 +189,47 @@ async function main() {
     uiStateAfterClosing.pageSize === 5
   )
 
-  console.log('Đạt', passed, 'kiểm tra W1, W2 & W3.')
+  // ==========================================
+  // N7-W04: Chi tiết, Timeline, File, Note & Quyền
+  // Tiêu chí: Reporter view không lẫn staff view, note internal được đánh dấu rõ
+  // ==========================================
+  const testIncidentId = '2ee24992-34d3-4955-9e5c-f7446fd42393'
+
+  // 1. Chi tiết sự cố
+  const incDetail = await staffApi.getIncidentDetail(testIncidentId, reporter)
+  check('N7 W4: reporter xem được chi tiết sự cố của mình', incDetail.id === testIncidentId)
+
+  // 2. Timeline lọc theo quyền (Reporter không lẫn internal events)
+  const repTimeline = await staffApi.getIncidentHistory(testIncidentId, reporter)
+  check('N7 W4: reporter timeline chỉ có public events', repTimeline.length > 0 && repTimeline.every((h) => h.visibility === 'public'))
+  const staffTimeline = await staffApi.getIncidentHistory(testIncidentId, handler)
+  check('N7 W4: staff timeline thấy cả internal events', staffTimeline.some((h) => h.visibility === 'internal'))
+
+  // 3. Trao đổi & Ghi chú nội bộ
+  const repComments = await staffApi.getIncidentComments(testIncidentId, reporter)
+  check('N7 W4: tiêu chí hoàn thành - reporter view chỉ thấy public comment', repComments.length > 0 && repComments.every((c) => c.visibility === 'public'))
+  check('N7 W4: tiêu chí hoàn thành - reporter view không lẫn note internal', repComments.every((c) => c.visibility !== 'internal'))
+
+  const staffComments = await staffApi.getIncidentComments(testIncidentId, handler)
+  check('N7 W4: staff view thấy cả public và internal comments', staffComments.some((c) => c.visibility === 'internal') && staffComments.some((c) => c.visibility === 'public'))
+
+  // 4. Note internal được đánh dấu rõ
+  const internalNote = staffComments.find((c) => c.visibility === 'internal')
+  check('N7 W4: tiêu chí hoàn thành - note internal được đánh dấu rõ ràng với cờ internal', !!internalNote && internalNote.visibility === 'internal')
+
+  // 5. Phân quyền tạo note: reporter bị 403 khi gửi internal, staff gửi được
+  await rejectsCode('N7 W4: reporter gửi note internal bị 403 forbidden', () => staffApi.addComment(testIncidentId, { body: 'thử nội bộ', visibility: 'internal' }, reporter), 'forbidden')
+  const newStaffNote = await staffApi.addComment(testIncidentId, { body: '[NỘI BỘ] Kiểm tra van nước', visibility: 'internal' }, handler)
+  check('N7 W4: staff gửi note internal thành công', newStaffNote.visibility === 'internal')
+
+  // 6. Tệp đính kèm
+  const atts = await staffApi.getIncidentAttachments(testIncidentId, reporter)
+  check('N7 W4: lấy danh sách tệp đính kèm thành công', atts.length > 0)
+
+  // 7. Ma trận quyền
+  const perm = staffApi.getPermissionMatrix(incDetail, handler)
+  check('N7 W4: ma trận quyền tính đúng cho handler', perm.isAssignedHandler && perm.canViewInternalNotes && (perm.canResolve || perm.canAcknowledge))
+
+  console.log('Đạt', passed, 'kiểm tra W1, W2, W3 & W4.')
 }
 main().catch((error) => { console.error(error); process.exitCode = 1 })
