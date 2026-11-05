@@ -5,10 +5,11 @@ import { MOCK_USERS } from './mocks/mock-users.ts'
 import { ReporterHome } from './features/reporter-w2/ReporterHome.tsx'
 import { ReporterWireframeView } from './features/reporter-w1/ReporterWireframeView.tsx'
 import { WaterLeakReportForm } from './features/reporter-w3/WaterLeakReportForm.tsx'
+import { ElectricalHazardReportForm } from './features/reporter-w4/ElectricalHazardReportForm.tsx'
 import { StaffManagementView } from './features/staff/StaffManagementView.tsx'
 
-type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/reporter/water-leak' | '/staff' | '/health'
-const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/reporter/water-leak', '/staff', '/health']
+type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/reporter/water-leak' | '/reporter/electrical-hazard' | '/staff' | '/health'
+const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/reporter/water-leak', '/reporter/electrical-hazard', '/staff', '/health']
 
 function currentRoute(): Route {
   const path = window.location.pathname
@@ -72,6 +73,7 @@ export default function App() {
       <nav className="navbar-nav" aria-label="Điều hướng chính">
         {canReport && <button type="button" className={`nav-link ${route === '/reporter' ? 'active' : ''}`} onClick={() => navigate('/reporter')}>Báo cáo của tôi</button>}
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/water-leak' ? 'active' : ''}`} onClick={() => navigate('/reporter/water-leak')}>Báo cáo rò nước</button>}
+        {canReport && <button type="button" className={`nav-link ${route === '/reporter/electrical-hazard' ? 'active' : ''}`} onClick={() => navigate('/reporter/electrical-hazard')}>Báo cáo nguy hiểm điện</button>}
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/wireframe' ? 'active' : ''}`} onClick={() => navigate('/reporter/wireframe')}>Mẫu giao diện báo cáo</button>}
         {canWork && <button type="button" className={`nav-link ${route === '/staff' ? 'active' : ''}`} onClick={() => navigate('/staff')}>Hàng đợi xử lý</button>}
         <button type="button" className={`nav-link ${route === '/health' ? 'active' : ''}`} onClick={() => navigate('/health')}>Kết nối API</button>
@@ -83,6 +85,7 @@ export default function App() {
       {allowed && route === '/login' && <section className="w2-panel w2-login" aria-labelledby="login-heading"><p className="w2-kicker">Bản demo W2</p><h1 id="login-heading">Đăng nhập mô phỏng</h1><p>Chọn tài khoản mẫu để kiểm tra quyền và giao diện. Luồng này chưa gọi API đăng nhập thật.</p><label>Tài khoản<select value={email} onChange={(event) => setEmail(event.target.value)}>{Object.values(MOCK_USERS).map((user) => <option key={user.id} value={user.email}>{user.display_name}</option>)}</select></label><button type="button" className="btn btn-primary" disabled={loginState === 'loading'} onClick={login}>{loginState === 'loading' ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>{loginState === 'error' && <p role="alert">Đăng nhập thất bại. Vui lòng thử lại.</p>}<p className="hint">Token demo chỉ giữ trong bộ nhớ; tải lại trang sẽ đăng xuất.</p></section>}
       {allowed && route === '/reporter' && <ReporterHome />}
       {allowed && route === '/reporter/water-leak' && <WaterLeakReportForm />}
+      {allowed && route === '/reporter/electrical-hazard' && <ElectricalHazardReportForm />}
       {allowed && route === '/reporter/wireframe' && <ReporterWireframeView />}
       {allowed && route === '/staff' && session && <StaffManagementView key={session.user.id} user={session.user} />}
       {allowed && route === '/health' && <HealthSection />}
