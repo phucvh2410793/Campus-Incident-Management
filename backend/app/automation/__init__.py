@@ -5,6 +5,7 @@ outbox/event publishing port, outbox & notification persistence, worker stub,
 service bearer authentication for /internal/* endpoints, and fixtures for n8n orchestration.
 """
 
+from app.automation.config import OutboxSettings
 from app.automation.models import Notification, OutboxEvent
 from app.automation.publisher import (
     EventPublisher,
@@ -35,7 +36,8 @@ from app.automation.service_auth import (
     require_service_bearer,
     token_manager,
 )
-from app.automation.worker import OutboxWorkerStub
+from app.automation.webhook import DispatchResult, WebhookDispatcher
+from app.automation.worker import OutboxWorkerStub, WorkerCycleResult
 
 __all__ = [
     "EventEnvelope",
@@ -51,6 +53,10 @@ __all__ = [
     "OutboxRepository",
     "NotificationRepository",
     "OutboxWorkerStub",
+    "WorkerCycleResult",
+    "OutboxSettings",
+    "WebhookDispatcher",
+    "DispatchResult",
     "calculate_signature",
     "build_webhook_headers",
     "verify_webhook_request",
