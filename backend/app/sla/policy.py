@@ -9,6 +9,8 @@ ACKNOWLEDGEMENT_SLA = {
     "p3": timedelta(hours=8),
 }
 
+REVIEW_ALERT_SLA = timedelta(minutes=15)
+
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
@@ -41,3 +43,13 @@ def should_escalate(
         return False
 
     return now_utc >= deadline
+
+
+def calculate_review_deadline(reported_at: datetime) -> datetime:
+    """Deadline for reviewing an incident that needs manual triage."""
+    return _as_utc(reported_at) + REVIEW_ALERT_SLA
+
+
+def should_alert_for_review(reported_at: datetime, now: datetime, triage_required: bool) -> bool:
+    """Signal a review when a triage case has waited past its deadline."""
+    return triage_required and _as_utc(now) >= calculate_review_deadline(reported_at)

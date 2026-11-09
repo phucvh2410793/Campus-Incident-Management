@@ -1,20 +1,20 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
-from uuid import UUID, uuid4
 
 from email_validator import EmailNotValidError, validate_email
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from app.auth.dependencies import (
-    bearer_scheme,
+    AuthenticatedSession,
+    get_authenticated_session,
     get_current_user,
     get_db,
 )
+from app.auth.errors import auth_request_id
 from app.auth.models import Session as UserSession
 from app.auth.rate_limit import login_limiter
 from app.auth.security import (
@@ -79,14 +79,6 @@ def user_response(user: User) -> UserResponse:
     )
 
 
-def login_request_id(request: Request) -> str:
-    supplied = request.headers.get("X-Request-ID")
-    try:
-        return str(UUID(supplied)) if supplied else str(uuid4())
-    except ValueError:
-        return str(uuid4())
-
-
 def login_error(
     code: str,
     message: str,
@@ -115,7 +107,7 @@ def login(
     request: Request,
     response: Response,
 ) -> LoginResponse | JSONResponse:
-    request_id = login_request_id(request)
+    request_id = auth_request_id(request)
     response.headers["X-Request-ID"] = request_id
     email = str(payload.email).lower()
     ip_address = request.client.host if request.client else "unknown"
@@ -172,7 +164,10 @@ def login(
 @router.get("/me", response_model=UserResponse)
 def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
+    response: Response,
 ):
+    response.headers["X-Request-ID"] = auth_request_id(request)
     return user_response(current_user)
 
 
@@ -181,29 +176,12 @@ def get_me(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def logout(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    auth: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
     db: Annotated[DBSession, Depends(get_db)],
+    request: Request,
+    response: Response,
 ):
-    # Hash the supplied token before looking up its session.
-    token_hash = hash_session_token(credentials.credentials)
-
-    session = db.scalar(
-        select(UserSession).where(
-            UserSession.token_hash == token_hash,
-            UserSession.user_id == current_user.id,
-            UserSession.revoked_at.is_(None),
-        )
-    )
-
-    if session is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session not found or already revoked",
-        )
-
-    # Revoke the session so the token cannot be reused.
-    session.revoked_at = datetime.now(UTC)
+    auth.session.revoked_at = datetime.now(UTC)
     db.commit()
-
+    response.headers["X-Request-ID"] = auth_request_id(request)
     return None
