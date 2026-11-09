@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test:n7": "node --experimental-strip-types test-n7-w4.ts",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
