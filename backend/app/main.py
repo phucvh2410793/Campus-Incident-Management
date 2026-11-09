@@ -6,11 +6,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+import app.workflow.router as workflow_router
 from app.auth.router import router as auth_router
 from app.automation.router import router as internal_router
 from app.core.config import get_settings
 from app.db import engine
-from app.workflow.router import router as workflow_router
 
 
 def check_database() -> None:
@@ -37,15 +37,14 @@ app.include_router(auth_router)
 
 # Internal service routes: n8n automation and callback endpoints (N5 ownership).
 app.include_router(internal_router)
-app.include_router(workflow_router)
 
 app.add_middleware(
     CORSMiddleware,
+    expose_headers=["X-Request-ID"],
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-    expose_headers=["X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
 )
 
 
@@ -71,3 +70,6 @@ def readiness():
         "status": "ok",
         "database": "reachable",
     }
+
+
+app.include_router(workflow_router.router)
