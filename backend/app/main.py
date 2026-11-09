@@ -11,6 +11,7 @@ from app.auth.router import router as auth_router
 from app.automation.router import router as internal_router
 from app.core.config import get_settings
 from app.db import engine
+from app.incidents.router import router as incidents_router
 
 
 def check_database() -> None:
@@ -39,13 +40,14 @@ app.include_router(auth_router)
 
 # Internal service routes: n8n automation and callback endpoints (N5 ownership).
 app.include_router(internal_router)
+app.include_router(incidents_router)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
 )
 
 
