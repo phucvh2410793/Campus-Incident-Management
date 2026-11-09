@@ -12,6 +12,7 @@ from app.automation.router import router as internal_router
 from app.core.config import get_settings
 from app.db import engine
 from app.incidents.router import router as incidents_router
+from app.workflow.router import router as workflow_router
 
 
 def check_database() -> None:
@@ -44,6 +45,7 @@ app.include_router(incidents_router)
 
 app.add_middleware(
     CORSMiddleware,
+    expose_headers=["X-Request-ID"],
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -73,3 +75,6 @@ def readiness():
         "status": "ok",
         "database": "reachable",
     }
+
+
+app.include_router(workflow_router)
