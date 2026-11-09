@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from app.sla.clock import FakeClock
-from app.sla.policy import calculate_deadline, should_escalate
+from app.sla.policy import (
+    calculate_deadline,
+    calculate_review_deadline,
+    should_alert_for_review,
+    should_escalate,
+)
 
 REPORTED_AT = datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
 SLA_CASES = json.loads(
@@ -109,3 +114,23 @@ def test_t12_commit_orders_match_shared_fixture():
         assert int(eligible) == order["expected_escalation_records"]
         results.append(int(eligible))
     assert max(results) == case["expected_max_escalation_records"]
+
+
+def test_manual_triage_review_threshold_and_t06_fallback():
+    from app.rules.engine import MANUAL_QUEUE, evaluate_incident
+
+    result = evaluate_incident(
+        "water_leak", {"leak_amount": "unknown", "near_electricity": "unknown"}
+    )
+    assert result.triage_required is True
+    assert result.department == MANUAL_QUEUE
+    assert result.priority is None
+    assert calculate_review_deadline(REPORTED_AT) == REPORTED_AT + timedelta(minutes=15)
+    assert not should_alert_for_review(REPORTED_AT, REPORTED_AT + timedelta(minutes=14), True)
+    assert should_alert_for_review(REPORTED_AT, REPORTED_AT + timedelta(minutes=15), True)
+    assert not should_alert_for_review(REPORTED_AT, REPORTED_AT + timedelta(minutes=20), False)
+
+
+def test_review_deadline_requires_utc_aware_time():
+    with pytest.raises(ValueError):
+        calculate_review_deadline(datetime(2026, 11, 2, 9, 30))
