@@ -4,9 +4,10 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select
 
+from app.auth.dependencies import lock_user
 from app.auth.models import Session as UserSession
 from app.auth.rate_limit import FailedLoginLimiter, login_limiter
-from app.auth.security import hash_session_token
+from app.auth.security import create_session_token, hash_session_token
 
 
 @pytest.fixture(autouse=True)
@@ -174,6 +175,9 @@ def test_me_without_token(client):
     response = client.get("/api/v1/auth/me")
 
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
 
 
 def test_me_with_valid_token(client, auth_headers, test_user):
@@ -188,6 +192,7 @@ def test_me_with_valid_token(client, auth_headers, test_user):
     assert data["email"] == test_user.email
     assert data["role"] == "reporter"
     assert data["is_active"] is True
+    assert str(UUID(response.headers["X-Request-ID"])) == response.headers["X-Request-ID"]
 
 
 def test_me_with_invalid_token(client):
@@ -197,15 +202,33 @@ def test_me_with_invalid_token(client):
     )
 
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
 
 
-def test_logout_revokes_token(client, auth_headers):
+def test_me_rejects_wrong_auth_scheme(client):
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": "Basic not-a-bearer-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
+
+
+def test_logout_revokes_token(client, auth_headers, db_session):
+    token = auth_headers["Authorization"].split(" ", 1)[1]
     response = client.post(
         "/api/v1/auth/logout",
         headers=auth_headers,
     )
 
     assert response.status_code == 204
+    assert response.content == b""
+    assert str(UUID(response.headers["X-Request-ID"])) == response.headers["X-Request-ID"]
+    session = db_session.scalar(
+        select(UserSession).where(UserSession.token_hash == hash_session_token(token))
+    )
+    assert session.revoked_at is not None
 
     response_after_logout = client.get(
         "/api/v1/auth/me",
@@ -213,6 +236,33 @@ def test_logout_revokes_token(client, auth_headers):
     )
 
     assert response_after_logout.status_code == 401
+    assert response_after_logout.json()["error"]["code"] == "unauthenticated"
+    assert client.post("/api/v1/auth/logout", headers=auth_headers).status_code == 401
+
+
+def test_logout_only_revokes_current_session(client, test_user):
+    payload = {"email": test_user.email, "password": "Test-password-123!"}
+    first_token = client.post("/api/v1/auth/login", json=payload).json()["access_token"]
+    second_token = client.post("/api/v1/auth/login", json=payload).json()["access_token"]
+
+    assert (
+        client.post(
+            "/api/v1/auth/logout", headers={"Authorization": f"Bearer {first_token}"}
+        ).status_code
+        == 204
+    )
+    assert (
+        client.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {first_token}"}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {second_token}"}
+        ).status_code
+        == 200
+    )
 
 
 def test_inactive_user_cannot_login(client, db_session, test_user):
@@ -237,8 +287,6 @@ def test_expired_session_is_rejected(
     db_session,
     test_user,
 ):
-    from app.auth.security import create_session_token
-
     token = create_session_token()
 
     session = UserSession(
@@ -256,6 +304,11 @@ def test_expired_session_is_rejected(
     )
 
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
+    assert (
+        client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"}).status_code
+        == 401
+    )
 
 
 def test_inactive_user_cannot_use_existing_token(
@@ -263,8 +316,6 @@ def test_inactive_user_cannot_use_existing_token(
     db_session,
     test_user,
 ):
-    from app.auth.security import create_session_token
-
     token = create_session_token()
 
     session = UserSession(
@@ -283,6 +334,53 @@ def test_inactive_user_cannot_use_existing_token(
     )
 
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
+    db_session.refresh(session)
+    assert session.revoked_at is not None
+
+
+def test_locking_user_revokes_all_existing_sessions(client, db_session, test_user):
+    tokens = [create_session_token(), create_session_token()]
+    sessions = [
+        UserSession(
+            user_id=test_user.id,
+            token_hash=hash_session_token(token),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        for token in tokens
+    ]
+    db_session.add_all(sessions)
+    test_user.is_active = False
+    db_session.flush()
+
+    for token in tokens:
+        response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "unauthenticated"
+
+    for session in sessions:
+        db_session.refresh(session)
+        assert session.revoked_at is not None
+
+
+def test_lock_user_revokes_sessions_before_next_request(client, db_session, test_user):
+    payload = {"email": test_user.email, "password": "Test-password-123!"}
+    tokens = [
+        client.post("/api/v1/auth/login", json=payload).json()["access_token"] for _ in range(2)
+    ]
+
+    lock_user(db_session, test_user)
+    for token in tokens:
+        session = db_session.scalar(
+            select(UserSession).where(UserSession.token_hash == hash_session_token(token))
+        )
+        db_session.refresh(session)
+        assert session.revoked_at is not None
+
+    for token in tokens:
+        response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "unauthenticated"
 
 
 def test_login_does_not_return_password_hash(client, test_user):

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.auth.errors import UnauthenticatedError, unauthenticated_response
 from app.auth.router import router as auth_router
 from app.automation.router import router as internal_router
 from app.core.config import get_settings
@@ -30,6 +31,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.add_exception_handler(UnauthenticatedError, unauthenticated_response)
 
 # Authentication routes: login and other auth endpoints.
 app.include_router(auth_router)
