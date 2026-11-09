@@ -1,0 +1,499 @@
+{
+  "name": "Campus Incident Management - Event Processor (N5 W5)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "events",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "2f4e7a10-5b8c-4d21-9e63-1a2b3c4d5e6f",
+      "name": "Webhook Receiver",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "cim-event-processor"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/internal/webhooks/verify",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CIM-Event-ID",
+              "value": "={{ $('Webhook Receiver').item.json.headers['x-cim-event-id'] }}"
+            },
+            {
+              "name": "X-CIM-Timestamp",
+              "value": "={{ $('Webhook Receiver').item.json.headers['x-cim-timestamp'] }}"
+            },
+            {
+              "name": "X-CIM-Signature",
+              "value": "={{ $('Webhook Receiver').item.json.headers['x-cim-signature'] }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cim-internal-service-bearer",
+          "name": "CIM Internal Service Bearer"
+        }
+      },
+      "id": "3a5f8b21-6c9d-4e32-8f74-2b3c4d5e6f70",
+      "name": "Verify Signature",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4b6a9c32-7d0e-4f43-9a85-3c4d5e6f7081",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "verified",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "4c7bad43-8e1f-4054-8b96-4d5e6f708192",
+      "name": "Signature Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"rejected\",\n  \"run_id\": \"{{ $execution.id }}\",\n  \"error_code\": \"webhook_verification_failed\",\n  \"detail\": {{ JSON.stringify($json.detail || 'Webhook signature or timestamp rejected') }}\n}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "5d8cbe54-9f20-4165-9ca7-5e6f708192a3",
+      "name": "Respond Rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://backend:8000/internal/events/{{ $('Webhook Receiver').item.json.body.event_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cim-internal-service-bearer",
+          "name": "CIM Internal Service Bearer"
+        }
+      },
+      "id": "6e9dcf65-0a31-4276-8db8-6f708192a3b4",
+      "name": "Duplicate Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7f0ed076-1b42-4387-9ec9-708192a3b4c5",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "done",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "801fe187-2c53-4498-8fda-8192a3b4c5d6",
+      "name": "Already Processed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"duplicate\",\n  \"duplicate\": true,\n  \"run_id\": \"{{ $execution.id }}\",\n  \"event_id\": \"{{ $('Webhook Receiver').item.json.body.event_id }}\",\n  \"message\": \"Event already processed; evaluation skipped\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "9120f298-3d64-45a9-90eb-92a3b4c5d6e7",
+      "name": "Respond Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/internal/events/{{ $('Webhook Receiver').item.json.body.event_id }}/evaluate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"run_id\": \"{{ $execution.id }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cim-internal-service-bearer",
+          "name": "CIM Internal Service Bearer"
+        }
+      },
+      "id": "a2310399-4e75-46ba-81fc-a3b4c5d6e7f8",
+      "name": "Evaluate Incident",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b34214aa-5f86-47cb-920d-b4c5d6e7f809",
+              "leftValue": "={{ typeof $json.incident_id === 'string' && $json.incident_id.length > 0 ? $json.incident_id : '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "c45325bb-6097-48dc-831e-c5d6e7f8091a",
+      "name": "Evaluation Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/internal/events/{{ $('Webhook Receiver').item.json.body.event_id }}/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"run_id\": \"{{ $execution.id }}\",\n  \"status\": \"done\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cim-internal-service-bearer",
+          "name": "CIM Internal Service Bearer"
+        }
+      },
+      "id": "d56436cc-71a8-49ed-942f-d6e7f8091a2b",
+      "name": "Complete Event (Done)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/internal/events/{{ $('Webhook Receiver').item.json.body.event_id }}/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"run_id\": \"{{ $execution.id }}\",\n  \"status\": \"failed\",\n  \"error_code\": \"evaluate_failed\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cim-internal-service-bearer",
+          "name": "CIM Internal Service Bearer"
+        }
+      },
+      "id": "e67547dd-82b9-4afe-8530-e7f8091a2b3c",
+      "name": "Complete Event (Failed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"processed\",\n  \"duplicate\": false,\n  \"run_id\": \"{{ $execution.id }}\",\n  \"event_id\": \"{{ $('Webhook Receiver').item.json.body.event_id }}\",\n  \"evaluation\": {{ JSON.stringify($('Evaluate Incident').item.json) }}\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "f78658ee-93ca-4b0f-9641-f8091a2b3c4d",
+      "name": "Respond Processed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"failed\",\n  \"duplicate\": false,\n  \"run_id\": \"{{ $execution.id }}\",\n  \"event_id\": \"{{ $('Webhook Receiver').item.json.body.event_id }}\",\n  \"error_code\": \"evaluate_failed\",\n  \"detail\": {{ JSON.stringify($('Evaluate Incident').item.json) }}\n}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "089769ff-a4db-4c10-a752-091a2b3c4d5e",
+      "name": "Respond Evaluation Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Receiver": {
+      "main": [
+        [
+          {
+            "node": "Verify Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Signature": {
+      "main": [
+        [
+          {
+            "node": "Signature Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature Valid?": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Check": {
+      "main": [
+        [
+          {
+            "node": "Already Processed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Processed?": {
+      "main": [
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluate Incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Incident": {
+      "main": [
+        [
+          {
+            "node": "Evaluation Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluation Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Complete Event (Done)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Complete Event (Failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Event (Done)": {
+      "main": [
+        [
+          {
+            "node": "Respond Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Event (Failed)": {
+      "main": [
+        [
+          {
+            "node": "Respond Evaluation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "CIMEventProcessor001"
+}
