@@ -81,3 +81,30 @@ dependencies installed. SQLite service/API tests cover scope, validation,
 state/version handling, rollback and outbox contents. Shared row locks and
 simultaneous races still require PostgreSQL runtime verification; the SQLite
 checks do not prove PostgreSQL concurrency behavior.
+
+
+## W5 acknowledgment
+
+Endpoint: `POST /api/v1/incidents/{incident_id}/acknowledge` with only
+`expected_version` (a positive integer). The assigned handler, current department
+manager or administrator can receive an incident. Other visible callers get 403;
+out-of-scope and missing incidents get 404. Authentication still uses N1 bearer sessions.
+
+Only `assigned -> in_progress` is allowed. The command increments version once and
+sets `acknowledged_at` in UTC. The SQL UPDATE checks version, status and current
+assignment; COALESCE preserves any previously recorded acknowledgment timestamp.
+Repeating an old version returns 409 version_conflict; repeating with the current
+version when no longer assigned returns 409 invalid_transition. Neither writes again.
+
+Incident update, public StatusHistory and AuditLog are atomic. The service uses a
+savepoint and leaves commit to the caller; the HTTP route commits once and rolls back
+on failure. The response reuses the existing `{incident, history_id}` command envelope;
+for acknowledgment, history_id references status_history. No new assignment is made,
+no deadline is reset, and no unsupported acknowledgment outbox event is invented.
+N3 SLA eligibility stops based on acknowledged_at; the deadline remains historical data.
+
+Code: AcknowledgmentService in backend/app/workflow/service.py and the existing workflow
+router. No migration is required. Tests: `python -m pytest tests/test_acknowledgment.py -q`
+from backend with project dependencies installed. SQLite tests cover service/API behavior,
+UTC clocks, repeated calls, conditional updates and rollback. Real PostgreSQL parallel
+requests and race with the SLA job require later integration verification (N3/N4 W7).
