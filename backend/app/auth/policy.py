@@ -4,6 +4,7 @@ from typing import Annotated, Protocol
 from fastapi import Depends, HTTPException, status
 
 from app.auth.dependencies import get_current_user
+from app.incidents.models import Incident
 from app.models import User
 
 ROLES = {
@@ -46,6 +47,57 @@ class RolePolicy:
 
         allowed_roles = self.permissions.get(action, set())
         return principal.role in allowed_roles
+
+
+@dataclass(frozen=True)
+class AccessDecision:
+    allowed: bool
+    code: str | None = None
+    http_status: int | None = None
+
+
+class IncidentPolicy:
+    """Record-scope policy shared by incident, comment and workflow services."""
+
+    def can_operate(self, principal: Principal, incident: Incident) -> bool:
+        if principal.role == "administrator":
+            return True
+        if principal.department_id is None or principal.department_id != str(
+            incident.department_id
+        ):
+            return False
+        if principal.role == "department_manager":
+            return True
+        return principal.role == "handler" and principal.user_id == str(
+            incident.assigned_handler_id
+        )
+
+    def can_view(self, principal: Principal, incident: Incident) -> bool:
+        if principal.role not in ROLES:
+            return False
+        return principal.user_id == str(incident.reporter_id) or self.can_operate(
+            principal, incident
+        )
+
+    def evaluate(self, principal: Principal, incident: Incident, action: str) -> AccessDecision:
+        # Check record scope first: a caller outside it must not learn the record exists.
+        if not self.can_view(principal, incident):
+            return AccessDecision(False, "not_found", 404)
+        if action in {"view", "comment_public", "evidence"}:
+            return AccessDecision(True)
+        if action == "read_internal_comment":
+            if self.can_operate(principal, incident):
+                return AccessDecision(True)
+            return AccessDecision(False, "not_found", 404)
+        if action in {"comment_internal", "work"}:
+            if self.can_operate(principal, incident):
+                return AccessDecision(True)
+        elif action == "assign":
+            if principal.role == "administrator" or (
+                principal.role == "department_manager" and self.can_operate(principal, incident)
+            ):
+                return AccessDecision(True)
+        return AccessDecision(False, "forbidden", 403)
 
 
 def get_principal(

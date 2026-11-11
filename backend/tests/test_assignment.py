@@ -207,6 +207,18 @@ def test_unauthorized_assignment_writes_nothing(case, role, code):
     assert counts(case) == [0, 0, 0, 0] and case.incident.version == 1
 
 
+def test_manager_who_reported_incident_cannot_assign_outside_department(case):
+    owner_manager = Principal(
+        case.users["reporter"].user_id,
+        "department_manager",
+        str(case.target),
+    )
+    with pytest.raises(WorkflowViolation) as error:
+        assign(case, principal=owner_manager)
+    assert (error.value.code, error.value.http_status) == ("forbidden", 403)
+    assert counts(case) == [0, 0, 0, 0]
+
+
 @pytest.mark.parametrize(
     "kind",
     [
@@ -331,6 +343,20 @@ def test_missing_incident_has_same_not_found_response(case, assignment_client):
         f"/api/v1/incidents/{uuid4()}/assign", json=request(case).model_dump(mode="json")
     )
     assert response.status_code == 404 and response.json()["error"]["code"] == "not_found"
+
+
+def test_out_of_scope_and_missing_incident_have_identical_error(case, assignment_client):
+    case.principal = case.users["other_manager"]
+    headers = {"X-Request-ID": str(uuid4())}
+    payload = request(case).model_dump(mode="json")
+    hidden = assignment_client.post(
+        f"/api/v1/incidents/{case.incident.id}/assign", json=payload, headers=headers
+    )
+    missing = assignment_client.post(
+        f"/api/v1/incidents/{uuid4()}/assign", json=payload, headers=headers
+    )
+    assert hidden.status_code == missing.status_code == 404
+    assert hidden.json() == missing.json()
 
 
 def test_assign_endpoint_requires_login(case, assignment_client):

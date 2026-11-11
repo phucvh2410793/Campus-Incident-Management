@@ -6,10 +6,9 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.auth.policy import Principal
+from app.auth.policy import IncidentPolicy, Principal
 from app.automation.publisher import OutboxEventPublisher
 from app.automation.schemas import EventType
-from app.comments.logic import require_incident_access
 from app.incidents.models import Incident
 from app.models import Department, User
 from app.rules.engine import MANUAL_QUEUE
@@ -46,9 +45,9 @@ class AssignmentService:
             incident = self.session.get(Incident, incident_id, populate_existing=True)
             if incident is None:
                 raise WorkflowViolation("not_found", 404)
-            require_incident_access(principal, incident)
-            if principal.role not in {"department_manager", "administrator"}:
-                raise WorkflowViolation("forbidden", 403)
+            decision = IncidentPolicy().evaluate(principal, incident, "assign")
+            if not decision.allowed:
+                raise WorkflowViolation(decision.code, decision.http_status)
             if incident.version != payload.expected_version:
                 raise WorkflowViolation("version_conflict", 409)
             if incident.status not in {"reported", "assigned", "in_progress"}:
