@@ -1,13 +1,16 @@
-"""Create incidents and their outbox events in one database transaction."""
+"""Create incidents and read them within the caller's record scope."""
 
+import base64
+import binascii
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import and_, select, text, tuple_
 from sqlalchemy.orm import Session
 
+from app.auth.policy import IncidentPolicy, Principal
 from app.automation.publisher import OutboxEventPublisher
 from app.automation.schemas import EventType
 from app.incidents.models import IdempotencyRecord, Incident
@@ -16,6 +19,77 @@ from app.incidents.schemas import IncidentCreateRequest
 
 class IdempotencyKeyConflict(Exception):
     pass
+
+
+def visible_incidents(principal: Principal):
+    """Use the shared incident policy before filtering or pagination."""
+    return IncidentPolicy().visible_clause(principal)
+
+
+def encode_cursor(incident: Incident) -> str:
+    payload = json.dumps(
+        [incident.reported_at.isoformat(), str(incident.id)], separators=(",", ":")
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+    try:
+        if len(cursor) > 512 or not cursor:
+            raise ValueError
+        data = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        timestamp, incident_id = json.loads(data)
+        timestamp = datetime.fromisoformat(timestamp)
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError
+        return timestamp, UUID(incident_id)
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error) as exc:
+        raise ValueError("Invalid cursor") from exc
+
+
+def overdue_condition(now: datetime):
+    return and_(
+        Incident.acknowledgment_deadline_at.is_not(None),
+        Incident.acknowledged_at.is_(None),
+        Incident.acknowledgment_deadline_at < now,
+    )
+
+
+def list_incidents(
+    db: Session,
+    principal: Principal,
+    *,
+    limit: int,
+    cursor: str | None,
+    status: str | None,
+    category: str | None,
+    priority: str | None,
+    department_id: UUID | None,
+    triage_required: bool | None,
+    overdue: bool | None,
+    now: datetime,
+) -> tuple[list[Incident], str | None]:
+    query = select(Incident).where(visible_incidents(principal))
+    for column, value in (
+        (Incident.status, status),
+        (Incident.category, category),
+        (Incident.priority, priority),
+        (Incident.department_id, department_id),
+        (Incident.triage_required, triage_required),
+    ):
+        if value is not None:
+            query = query.where(column == value)
+    if overdue is not None:
+        condition = overdue_condition(now)
+        query = query.where(condition if overdue else ~condition)
+    if cursor is not None:
+        query = query.where(
+            tuple_(Incident.reported_at, Incident.id) < tuple_(*decode_cursor(cursor))
+        )
+    rows = db.scalars(
+        query.order_by(Incident.reported_at.desc(), Incident.id.desc()).limit(limit + 1)
+    ).all()
+    return rows[:limit], encode_cursor(rows[limit - 1]) if len(rows) > limit else None
 
 
 def create_incident(

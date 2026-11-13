@@ -50,13 +50,16 @@ def test_create_replay_and_conflict(client, auth_headers, db_session, test_user)
 
 def test_create_rejects_missing_auth_key_and_invalid_body(client, auth_headers, db_session):
     assert client.post("/api/v1/incidents", json=WATER_LEAK).status_code == 401
-    assert client.post(
-        "/api/v1/incidents", json=WATER_LEAK, headers=auth_headers
-    ).status_code == 400
+    assert (
+        client.post("/api/v1/incidents", json=WATER_LEAK, headers=auth_headers).status_code == 400
+    )
     headers = {**auth_headers, "Idempotency-Key": str(uuid4())}
-    assert client.post(
-        "/api/v1/incidents", json={**WATER_LEAK, "reporter_id": str(uuid4())}, headers=headers
-    ).status_code == 422
+    assert (
+        client.post(
+            "/api/v1/incidents", json={**WATER_LEAK, "reporter_id": str(uuid4())}, headers=headers
+        ).status_code
+        == 422
+    )
     assert db_session.scalar(select(func.count()).select_from(Incident)) == 0
 
 

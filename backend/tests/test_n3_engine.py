@@ -11,14 +11,12 @@ def load_cases():
         return json.load(fixture_file)
 
 
-
 def test_t01_to_t06_match_expected_rule_results():
     cases = load_cases()["classification_cases"]
 
     for case in cases:
         result = evaluate_incident(**case["request"])
         assert result.model_dump(mode="json") == case["expected"], case["test_id"]
-
 
 
 def test_rule_order_prioritizes_immediate_electrical_danger():
@@ -63,7 +61,6 @@ def test_n2_water_leak_answers_with_optional_boolean_can_be_evaluated():
     assert result.rule_id == "R07"
     assert result.priority == "p3"
     assert result.triage_required is False
-
 
 
 def test_conflicting_phishing_answer_does_not_get_low_priority():

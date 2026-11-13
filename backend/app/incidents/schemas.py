@@ -117,3 +117,24 @@ class IncidentResponse(BaseModel):
     closed_at: datetime | None
     acknowledgment_deadline_at: datetime | None
     escalation_level: int
+
+
+class IncidentSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    version: int
+    category: str
+    title: str
+    status: str
+    priority: str | None
+    triage_required: bool
+    department_id: UUID | None
+    reported_at: datetime
+    acknowledgment_deadline_at: datetime | None
+    overdue: bool = False
+
+
+class IncidentPage(BaseModel):
+    items: list[IncidentSummary]
+    next_cursor: str | None

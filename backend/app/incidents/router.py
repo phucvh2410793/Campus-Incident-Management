@@ -1,21 +1,64 @@
-"""Reporter incident creation API."""
+"""Incident creation and scoped read APIs."""
 
-from typing import Annotated
+from datetime import UTC, datetime
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import get_db
-from app.auth.policy import Principal, require_permission
-from app.incidents.schemas import IncidentCreateRequest, IncidentResponse, validate_incident_create
-from app.incidents.service import IdempotencyKeyConflict, create_incident
+from app.auth.policy import Principal, get_principal, require_permission
+from app.incidents.models import Incident
+from app.incidents.schemas import (
+    IncidentCreateRequest,
+    IncidentPage,
+    IncidentResponse,
+    IncidentSummary,
+    validate_incident_create,
+)
+from app.incidents.service import (
+    IdempotencyKeyConflict,
+    create_incident,
+    list_incidents,
+    visible_incidents,
+)
 
-router = APIRouter(prefix="/api/v1/incidents", tags=["incidents"])
+
+class IncidentRoute(APIRoute):
+    def get_route_handler(self):
+        original = super().get_route_handler()
+
+        async def handle(request: Request):
+            try:
+                return await original(request)
+            except RequestValidationError as exc:
+                details = [
+                    {"field": ".".join(map(str, error["loc"])), "reason": error["type"]}
+                    for error in exc.errors()
+                ]
+                return error_response(
+                    422, "validation_error", "Invalid request", _request_id(request), details
+                )
+
+        return handle
+
+
+router = APIRouter(prefix="/api/v1/incidents", tags=["incidents"], route_class=IncidentRoute)
 _create_schema = TypeAdapter(IncidentCreateRequest).json_schema()
+
+
+def _request_id(request: Request) -> UUID:
+    try:
+        return UUID(request.headers.get("X-Request-ID", ""))
+    except ValueError:
+        return uuid4()
 
 
 def error_response(status_code: int, code: str, message: str, request_id: UUID, details=None):
@@ -58,10 +101,7 @@ async def post_incident(
     principal: Annotated[Principal, Depends(require_permission("report_incident"))],
     db: Annotated[Session, Depends(get_db)],
 ):
-    try:
-        request_id = UUID(request.headers.get("X-Request-ID", ""))
-    except ValueError:
-        request_id = uuid4()
+    request_id = _request_id(request)
     key_text = request.headers.get("Idempotency-Key")
     if not key_text:
         return error_response(
@@ -95,3 +135,76 @@ async def post_incident(
     response.headers["X-Request-ID"] = str(request_id)
     response.headers["Location"] = f"/api/v1/incidents/{incident.id}"
     return IncidentResponse.model_validate(incident)
+
+
+@router.get("", response_model=IncidentPage)
+def get_incidents(
+    request: Request,
+    response: Response,
+    principal: Annotated[Principal, Depends(get_principal)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    cursor: str | None = None,
+    status: Literal["reported", "assigned", "in_progress", "resolved", "closed"] | None = None,
+    category: Literal["water_leak", "electrical_hazard", "phishing"] | None = None,
+    priority: Literal["p1", "p2", "p3"] | None = None,
+    department_id: UUID | None = None,
+    triage_required: bool | None = None,
+    overdue: bool | None = None,
+):
+    now = datetime.now(UTC)
+    try:
+        incidents, next_cursor = list_incidents(
+            db,
+            principal,
+            limit=limit,
+            cursor=cursor,
+            status=status,
+            category=category,
+            priority=priority,
+            department_id=department_id,
+            triage_required=triage_required,
+            overdue=overdue,
+            now=now,
+        )
+    except ValueError:
+        return error_response(422, "validation_error", "Invalid cursor", _request_id(request))
+    response.headers["X-Request-ID"] = str(_request_id(request))
+    items = [
+        IncidentSummary.model_validate(incident).model_copy(
+            update={
+                "overdue": bool(
+                    incident.acknowledgment_deadline_at
+                    and incident.acknowledged_at is None
+                    and incident.acknowledgment_deadline_at < now
+                )
+            }
+        )
+        for incident in incidents
+    ]
+    return IncidentPage(items=items, next_cursor=next_cursor)
+
+
+@router.get("/{incident_id}", response_model=IncidentResponse)
+def get_incident(
+    incident_id: UUID,
+    request: Request,
+    response: Response,
+    principal: Annotated[Principal, Depends(get_principal)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    incident = db.scalar(
+        select(Incident).where(Incident.id == incident_id, visible_incidents(principal))
+    )
+    if incident is None:
+        return error_response(404, "not_found", "Incident not found", _request_id(request))
+    response.headers["X-Request-ID"] = str(_request_id(request))
+    result = IncidentResponse.model_validate(incident)
+    staff_scope = (
+        principal.role == "administrator"
+        or principal.role == "handler"
+        and str(incident.assigned_handler_id) == principal.user_id
+        or principal.role == "department_manager"
+        and str(incident.department_id) == principal.department_id
+    )
+    return result if staff_scope else result.model_copy(update={"assigned_handler_id": None})
