@@ -180,6 +180,17 @@ def test_manager_can_assign_department_without_handler(case):
     assert assign(case, request(case, handler_id=None)).incident.assigned_handler_id is None
 
 
+def test_manager_who_reported_outside_their_department_cannot_assign(case):
+    case.incident.reporter_id = UUID(case.users["other_manager"].user_id)
+    case.session.flush()
+
+    with pytest.raises(WorkflowViolation):
+        assign(case, principal=case.users["other_manager"])
+
+    assert case.incident.version == 1
+    assert case.incident.assigned_handler_id == UUID(case.users["handler"].user_id)
+
+
 def test_admin_can_assign_unclassified_incident(case):
     case.incident.department_id = None
     case.incident.assigned_handler_id = None

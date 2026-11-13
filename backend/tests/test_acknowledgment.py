@@ -123,6 +123,29 @@ def test_old_handler_loses_permission_after_reassignment(assigned):
     assert error.value.http_status == 404 and records(assigned) == [0, 0]
 
 
+def test_handler_who_reported_but_is_not_assigned_cannot_acknowledge(assigned):
+    assigned.incident.reporter_id = UUID(assigned.users["handler"].user_id)
+    assigned.incident.assigned_handler_id = UUID(assigned.users["target_handler"].user_id)
+    assigned.session.flush()
+
+    with pytest.raises(WorkflowViolation):
+        acknowledge(assigned)
+
+    assert assigned.incident.version == 1
+    assert assigned.incident.acknowledged_at is None and records(assigned) == [0, 0]
+
+
+def test_manager_who_reported_outside_their_department_cannot_acknowledge(assigned):
+    assigned.incident.reporter_id = UUID(assigned.users["other_manager"].user_id)
+    assigned.session.flush()
+
+    with pytest.raises(WorkflowViolation):
+        acknowledge(assigned, role="other_manager")
+
+    assert assigned.incident.version == 1
+    assert assigned.incident.acknowledged_at is None and records(assigned) == [0, 0]
+
+
 def test_manager_can_receive_department_assignment_without_handler(assigned):
     assigned.incident.assigned_handler_id = None
     assigned.session.flush()
