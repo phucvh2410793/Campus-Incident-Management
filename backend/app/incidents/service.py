@@ -7,10 +7,10 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, false, or_, select, text, tuple_
+from sqlalchemy import and_, select, text, tuple_
 from sqlalchemy.orm import Session
 
-from app.auth.policy import Principal
+from app.auth.policy import IncidentPolicy, Principal
 from app.automation.publisher import OutboxEventPublisher
 from app.automation.schemas import EventType
 from app.incidents.models import IdempotencyRecord, Incident
@@ -22,18 +22,8 @@ class IdempotencyKeyConflict(Exception):
 
 
 def visible_incidents(principal: Principal):
-    """Apply record scope before filtering or pagination."""
-    if principal.role == "administrator":
-        return True
-    if principal.role not in {"reporter", "handler", "department_manager"}:
-        return false()
-    user_id = UUID(principal.user_id)
-    allowed = [Incident.reporter_id == user_id]
-    if principal.role == "handler":
-        allowed.append(Incident.assigned_handler_id == user_id)
-    elif principal.role == "department_manager" and principal.department_id:
-        allowed.append(Incident.department_id == UUID(principal.department_id))
-    return or_(*allowed)
+    """Use the shared incident policy before filtering or pagination."""
+    return IncidentPolicy().visible_clause(principal)
 
 
 def encode_cursor(incident: Incident) -> str:

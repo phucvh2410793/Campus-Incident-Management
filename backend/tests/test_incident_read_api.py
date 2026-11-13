@@ -56,9 +56,22 @@ def test_list_scope_and_detail_hide_outside_records(client, db_session, test_use
     manager, manager_headers = make_user(client, db_session, "department_manager", department.id)
     admin, admin_headers = make_user(client, db_session, "administrator")
 
-    own = make_incident(db_session, test_user.id, 1, assigned_handler_id=handler.id)
+    own = make_incident(
+        db_session,
+        test_user.id,
+        1,
+        department_id=department.id,
+        assigned_handler_id=handler.id,
+    )
     in_department = make_incident(db_session, other.id, 2, department_id=department.id)
     elsewhere = make_incident(db_session, other.id, 3, department_id=other_department.id)
+    assigned_elsewhere = make_incident(
+        db_session,
+        other.id,
+        6,
+        department_id=other_department.id,
+        assigned_handler_id=handler.id,
+    )
     handler_own = make_incident(db_session, handler.id, 4)
     manager_own = make_incident(db_session, manager.id, 5)
 
@@ -70,15 +83,20 @@ def test_list_scope_and_detail_hide_outside_records(client, db_session, test_use
 
     assert ids(auth_headers) == {str(own.id)}
     assert ids(handler_headers) == {str(own.id), str(handler_own.id)}
-    assert ids(manager_headers) == {str(in_department.id), str(manager_own.id)}
+    assert ids(manager_headers) == {str(own.id), str(in_department.id), str(manager_own.id)}
     assert ids(admin_headers) == {
         str(own.id),
         str(in_department.id),
         str(elsewhere.id),
+        str(assigned_elsewhere.id),
         str(handler_own.id),
         str(manager_own.id),
     }
-    assert ids(other_headers) == {str(in_department.id), str(elsewhere.id)}
+    assert ids(other_headers) == {
+        str(in_department.id),
+        str(elsewhere.id),
+        str(assigned_elsewhere.id),
+    }
     assert (
         client.get(
             "/api/v1/incidents",
