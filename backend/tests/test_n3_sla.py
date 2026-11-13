@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -134,3 +134,60 @@ def test_manual_triage_review_threshold_and_t06_fallback():
 def test_review_deadline_requires_utc_aware_time():
     with pytest.raises(ValueError):
         calculate_review_deadline(datetime(2026, 11, 2, 9, 30))
+
+@pytest.mark.parametrize(
+    ("priority", "duration"),
+    [
+        ("p1", timedelta(minutes=15)),
+        ("p2", timedelta(hours=2)),
+        ("p3", timedelta(hours=8)),
+    ],
+)
+@pytest.mark.parametrize(
+    ("offset", "expected"),
+    [
+        (timedelta(seconds=-1), False),
+        (timedelta(0), True),
+        (timedelta(seconds=1), True),
+    ],
+    ids=["before-deadline", "at-deadline", "after-deadline"],
+)
+def test_escalation_boundary_with_fake_clock(priority, duration, offset, expected):
+    deadline = REPORTED_AT + duration
+    clock = FakeClock(deadline + offset)
+
+    result = should_escalate(
+        reported_at=REPORTED_AT,
+        priority=priority,
+        now=clock.now(),
+    )
+
+    assert result is expected
+def test_fake_clock_normalizes_timezone_to_utc():
+    local_time = datetime(
+        2026, 11, 2, 16, 30,
+        tzinfo=timezone(timedelta(hours=7)),
+    )
+
+    clock = FakeClock(local_time)
+
+    assert clock.now() == REPORTED_AT
+
+
+def test_fake_clock_set_updates_time():
+    clock = FakeClock(REPORTED_AT)
+
+    new_time = REPORTED_AT + timedelta(hours=2)
+    clock.set(new_time)
+
+    assert clock.now() == new_time
+
+
+def test_fake_clock_rejects_naive_datetime():
+    with pytest.raises(ValueError):
+        FakeClock(datetime(2026, 11, 2, 9, 30))
+
+    clock = FakeClock(REPORTED_AT)
+
+    with pytest.raises(ValueError):
+        clock.set(datetime(2026, 11, 2, 10, 30))
