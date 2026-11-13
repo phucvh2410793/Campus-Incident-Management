@@ -3,6 +3,7 @@ import type { IncidentResponse, HistoryItem, Comment, AttachmentSummary } from '
 import type { UserSummary } from '../../types/auth.ts'
 import { DEPARTMENTS, MOCK_USERS } from '../../mocks/mock-users.ts'
 import { mockN7StaffRoleApi, type PermissionStatus } from '../../mocks/n7-role-mock-api.ts'
+import { StaffWorkflowActions } from './StaffWorkflowActions.tsx'
 
 interface StaffIncidentDetailModalProps {
   incident: IncidentResponse | null
@@ -12,7 +13,7 @@ interface StaffIncidentDetailModalProps {
   forceReporterView?: boolean
 }
 
-type DetailTabKey = 'info' | 'timeline' | 'files' | 'comments' | 'permissions'
+type DetailTabKey = 'info' | 'actions' | 'timeline' | 'files' | 'comments' | 'permissions'
 
 const categoryMeta: Record<string, { label: string; icon: string }> = {
   water_leak: { label: 'Rò rỉ nước', icon: '💧' },
@@ -41,9 +42,10 @@ function formatFileSize(bytes: number): string {
 }
 
 export function StaffIncidentDetailModal({
-  incident,
+  incident: initialIncident,
   currentUser,
   onClose,
+  onIncidentUpdated,
   forceReporterView = false,
 }: StaffIncidentDetailModalProps) {
   // Quyết định danh tính người đang xem: mặc định admin nếu chưa đăng nhập staff
@@ -57,6 +59,32 @@ export function StaffIncidentDetailModal({
 
   // Tabs bên trong modal
   const [activeTab, setActiveTab] = useState<DetailTabKey>('info')
+
+  // Quản lý trạng thái Incident hiện thời (cập nhật khi Triage/Assign/Priority hoặc khi 409 tải lại)
+  const [currentIncident, setCurrentIncident] = useState<IncidentResponse | null>(initialIncident)
+  const [prevInitialId, setPrevInitialId] = useState(initialIncident?.id)
+
+  if (initialIncident?.id !== prevInitialId) {
+    setPrevInitialId(initialIncident?.id)
+    setCurrentIncident(initialIncident)
+  }
+
+  const incident = currentIncident || initialIncident
+
+  const handleReloadIncident = async (): Promise<IncidentResponse> => {
+    if (!incident) throw new Error('Không có sự cố.')
+    const fresh = await mockN7StaffRoleApi.getIncidentDetail(incident.id, effectiveUser)
+    setCurrentIncident(fresh)
+    setRefreshKey((k) => k + 1)
+    onIncidentUpdated?.(fresh)
+    return fresh
+  }
+
+  const handleIncidentUpdatedFromAction = (updated: IncidentResponse) => {
+    setCurrentIncident(updated)
+    setRefreshKey((k) => k + 1)
+    onIncidentUpdated?.(updated)
+  }
 
   // Dữ liệu timeline, comments, attachments
   const [timeline, setTimeline] = useState<HistoryItem[]>([])
@@ -262,6 +290,15 @@ export function StaffIncidentDetailModal({
           >
             📋 Thông tin chung
           </button>
+          {viewMode === 'staff' && (
+            <button
+              type="button"
+              className={`modal-subnav-btn ${activeTab === 'actions' ? 'active' : ''}`}
+              onClick={() => setActiveTab('actions')}
+            >
+              ⚙️ Thao tác &amp; Phân công {incident.triage_required && <span className="pill-badge-warning">Triage</span>}
+            </button>
+          )}
           <button
             type="button"
             className={`modal-subnav-btn ${activeTab === 'timeline' ? 'active' : ''}`}
@@ -305,6 +342,23 @@ export function StaffIncidentDetailModal({
           {/* ============================================================ */}
           {activeTab === 'info' && (
             <div className="modal-tab-content gui-fade-transition">
+              {/* N7-W05: Hộp nhắc Triage khẩn cấp */}
+              {incident.triage_required && viewMode === 'staff' && (
+                <div className="triage-callout-box" role="alert">
+                  <div className="triage-callout-text">
+                    <strong>🚨 SỰ CỐ ĐANG CẦN PHÂN LOẠI THỦ CÔNG (TRIAGE):</strong>
+                    <span>Sự cố chưa có bộ phận chính thức hoặc độ ưu tiên SLA. Hãy chuyển sang tab Thao tác để phân loại ngay.</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-warning"
+                    onClick={() => setActiveTab('actions')}
+                  >
+                    ⚡ Mở form Triage &amp; Phân công ngay →
+                  </button>
+                </div>
+              )}
+
               <h3 id="modal-incident-title" className="modal-title">
                 {incident.title}
               </h3>
@@ -433,6 +487,21 @@ export function StaffIncidentDetailModal({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* TAB N7-W05: THAO TÁC, TRIAGE, PHÂN CÔNG & ĐỔI ĐỘ ƯU TIÊN     */}
+          {/* ============================================================ */}
+          {activeTab === 'actions' && viewMode === 'staff' && permissions && (
+            <div className="modal-tab-content gui-fade-transition">
+              <StaffWorkflowActions
+                incident={incident}
+                currentUser={effectiveUser}
+                permissions={permissions}
+                onIncidentUpdated={handleIncidentUpdatedFromAction}
+                onReloadIncident={handleReloadIncident}
+              />
             </div>
           )}
 
@@ -853,6 +922,18 @@ export function StaffIncidentDetailModal({
                     </tr>
                   </tbody>
                 </table>
+
+                {viewMode === 'staff' && (
+                  <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={() => setActiveTab('actions')}
+                    >
+                      ⚙️ Mở giao diện Thao tác &amp; Phân công →
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -861,7 +942,7 @@ export function StaffIncidentDetailModal({
         {/* Modal Footer */}
         <div className="modal-footer">
           <span className="modal-footer-hint">
-            N7-W04: Chi tiết, Timeline, File đính kèm, Ghi chú Public/Internal &amp; Ma trận quyền.
+            N7-W04 &amp; N7-W05: Chi tiết, Timeline, Ghi chú, Quyền, UI Triage, Phân công &amp; Đổi Priority (OCC 409).
           </span>
           <button type="button" className="btn btn-outline" onClick={onClose}>
             Đóng cửa sổ

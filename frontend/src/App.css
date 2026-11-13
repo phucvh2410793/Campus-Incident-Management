@@ -3212,5 +3212,505 @@ code, kbd, samp, pre, .font-mono {
   font-size: 0.825rem;
 }
 
+/* ==========================================================================
+   N7-W05: UI TRIAGE, PHÂN CÔNG/CHUYỂN BỘ PHẬN & ĐỔI ĐỘ ƯU TIÊN KÈM REASON
+   Tiêu chí: "Form bắt reason; 409 tải lại và không mất dữ liệu nhập."
+   ========================================================================== */
+
+/* Hộp cảnh báo Triage ở Tab 1 */
+.triage-callout-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background-color: #fffbeb;
+  border: 1.5px solid #f59e0b;
+  border-left-width: 5px;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 1.25rem;
+}
+
+.triage-callout-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.875rem;
+  color: #92400e;
+}
+
+.triage-callout-text strong {
+  color: #78350f;
+  font-weight: 700;
+}
+
+/* Wrapper toàn bộ khối thao tác */
+.workflow-actions-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Cảnh báo sự cố cần Triage nổi bật */
+.triage-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background-color: #fef2f2;
+  border: 1.5px solid #ef4444;
+  border-left-width: 5px;
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+}
+
+.triage-alert-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.triage-alert-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.triage-alert-content strong {
+  display: block;
+  color: #991b1b;
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}
+
+.triage-alert-content p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #7f1d1d;
+  line-height: 1.45;
+}
+
+/* Banner Xung đột phiên bản 409 - Tiêu chí hoàn thành cốt lõi */
+.workflow-conflict-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background-color: #fffbeb;
+  border: 2px solid #d97706;
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.15);
+  animation: pulseConflict 0.3s ease-in-out;
+}
+
+@keyframes pulseConflict {
+  0% { transform: scale(0.98); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.workflow-conflict-banner-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+  color: #d97706;
+}
+
+.workflow-conflict-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-conflict-banner-content strong {
+  color: #92400e;
+  font-size: 0.925rem;
+}
+
+.workflow-conflict-banner-content p {
+  margin: 0;
+  color: #78350f;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.workflow-conflict-note {
+  background-color: #fef3c7;
+  border: 1px dashed #f59e0b;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 0.825rem;
+  color: #92400e;
+  margin-top: 4px;
+}
+
+/* Banner thành công */
+.workflow-success-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: #ecfdf5;
+  border: 1.5px solid #10b981;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  color: #065f46;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.btn-close-notice {
+  background: none;
+  border: none;
+  color: #065f46;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.btn-close-notice:hover {
+  background-color: rgba(6, 95, 70, 0.1);
+}
+
+/* Sub-nav pills cho 3 thao tác */
+.workflow-subnav-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.workflow-subnav-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 7px 14px;
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.workflow-subnav-pill:hover {
+  background-color: var(--surface-muted);
+  color: var(--text-primary);
+  border-color: #cbd5e1;
+}
+
+.workflow-subnav-pill.active {
+  background-color: #1d4ed8;
+  color: #ffffff;
+  border-color: #1d4ed8;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.25);
+}
+
+.pill-badge-warning {
+  background-color: #f59e0b;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+}
+
+/* Card chứa Form */
+.workflow-action-card {
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px 22px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.workflow-action-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+
+.workflow-action-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.workflow-action-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.825rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.workflow-version-badge {
+  display: inline-flex;
+  align-items: center;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-full);
+  padding: 4px 10px;
+  font-size: 0.775rem;
+  color: #475569;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.workflow-version-badge strong {
+  color: #0f172a;
+  margin-left: 4px;
+}
+
+/* Grid form */
+.workflow-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.workflow-field-wide {
+  grid-column: 1 / -1;
+}
+
+.workflow-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workflow-field-label-required {
+  color: #dc2626;
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+.workflow-input-select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: #ffffff;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  transition: all 0.15s ease;
+}
+
+.workflow-input-select:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
+}
+
+.workflow-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: #ffffff;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: vertical;
+  transition: all 0.15s ease;
+}
+
+.workflow-textarea:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
+}
+
+.workflow-textarea.has-error {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
+
+.workflow-field-help {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 18px;
+}
+
+.workflow-error-text {
+  color: #b91c1c;
+  font-size: 0.825rem;
+  font-weight: 600;
+}
+
+.workflow-char-counter {
+  color: var(--text-secondary);
+  font-size: 0.775rem;
+  margin-left: auto;
+}
+
+.workflow-hint-text {
+  font-size: 0.775rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.workflow-error-banner {
+  background-color: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  color: #991b1b;
+  font-size: 0.85rem;
+  margin-top: 12px;
+}
+
+/* Radio Cards chọn Priority */
+.priority-select-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.priority-select-card {
+  position: relative;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+  background-color: #ffffff;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.priority-select-card input[type="radio"] {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.priority-select-card:hover {
+  border-color: #93c5fd;
+  background-color: #f8fafc;
+}
+
+.priority-select-card.selected {
+  border-color: #1d4ed8;
+  background-color: #eff6ff;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.2);
+}
+
+.priority-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.priority-badge-pill {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.priority-badge-pill.p1 {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.priority-badge-pill.p2 {
+  background-color: #ffedd5;
+  color: #9a3412;
+}
+
+.priority-badge-pill.p3 {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+.priority-card-sla {
+  font-size: 0.825rem;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+.priority-card-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+/* Footer nút thao tác */
+.workflow-action-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+  margin-top: 18px;
+}
+
+.workflow-footer-left {
+  display: flex;
+  align-items: center;
+}
+
+.btn-simulate-conflict {
+  border-color: #f59e0b;
+  color: #b45309;
+  background-color: #fffbeb;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.btn-simulate-conflict:hover {
+  background-color: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
+}
+
+.workflow-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .workflow-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .priority-select-cards {
+    grid-template-columns: 1fr;
+  }
+  .workflow-action-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .workflow-footer-right {
+    justify-content: stretch;
+  }
+  .workflow-footer-right button {
+    width: 100%;
+  }
+}
+
+
 
 

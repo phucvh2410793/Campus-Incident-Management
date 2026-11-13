@@ -371,12 +371,16 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
         </div>
       </div>
 
-      {/* 5. Modal xem nhanh chi tiết sự cố (N7-W04) */}
+      {/* 5. Modal xem nhanh chi tiết sự cố (N7-W04 & N7-W05) */}
       {selectedIncident && (
         <StaffIncidentDetailModal
           incident={selectedIncident}
           currentUser={currentUser}
           onClose={() => setSelectedIncident(null)}
+          onIncidentUpdated={(updated) => {
+            setSelectedIncident(updated)
+            setRefreshCounter((c) => c + 1)
+          }}
         />
       )}
     </div>
