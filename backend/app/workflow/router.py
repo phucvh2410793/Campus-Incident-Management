@@ -1,4 +1,4 @@
-"""Assignment endpoint; local error handling leaves other teams' routes unchanged."""
+"""Workflow endpoints; local error handling leaves other teams' routes unchanged."""
 
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db
 from app.auth.policy import Principal, get_principal
-from app.workflow.contracts import AssignRequest, WorkflowViolation
+from app.workflow.contracts import AcknowledgeRequest, AssignRequest, WorkflowViolation
 from app.workflow.schemas import AssignmentResponse
-from app.workflow.service import AssignmentService
+from app.workflow.service import AcknowledgmentService, AssignmentService
 
 
 def error_response(status: int, code: str, request_id: UUID, details=None, headers=None):
@@ -79,6 +79,28 @@ def assign_incident(
 ):
     try:
         result = AssignmentService(db).assign(
+            principal,
+            incident_id,
+            payload,
+            request_id=request.state.workflow_request_id,
+        )
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/{incident_id}/acknowledge", response_model=AssignmentResponse)
+def acknowledge_incident(
+    incident_id: UUID,
+    payload: AcknowledgeRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        result = AcknowledgmentService(db).acknowledge(
             principal,
             incident_id,
             payload,

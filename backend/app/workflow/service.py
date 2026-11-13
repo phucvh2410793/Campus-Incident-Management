@@ -1,9 +1,10 @@
-"""W4 assignment commands. The caller commits; failures roll back the savepoint."""
+"""Assignment and acknowledgment commands. The caller commits; failures roll back the savepoint."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.policy import IncidentPolicy, Principal
@@ -12,7 +13,7 @@ from app.automation.schemas import EventType
 from app.incidents.models import Incident
 from app.models import Department, User
 from app.rules.engine import MANUAL_QUEUE
-from app.workflow.contracts import AssignRequest, WorkflowViolation
+from app.workflow.contracts import AcknowledgeRequest, AssignRequest, WorkflowViolation
 from app.workflow.models import Assignment, AuditLog, StatusHistory
 from app.workflow.repository import WorkflowRepository
 from app.workflow.schemas import AssignmentIncident, AssignmentResponse
@@ -152,5 +153,94 @@ class AssignmentService:
             response = AssignmentResponse(
                 incident=AssignmentIncident.model_validate(incident),
                 history_id=assignment.id,
+            )
+        return response
+
+
+class AcknowledgmentService:
+    def __init__(self, session: Session, *, clock: Callable[[], datetime] | None = None):
+        self.session = session
+        self.clock = clock or (lambda: datetime.now(UTC))
+
+    def acknowledge(
+        self,
+        principal: Principal,
+        incident_id: UUID,
+        payload: AcknowledgeRequest,
+        *,
+        request_id: UUID,
+    ) -> AssignmentResponse:
+        """Accept assigned incidents once; caller commits the outer transaction.
+
+        The conditional UPDATE is the concurrency boundary. PostgreSQL SLA jobs
+        must lock/recheck the same incident when creating escalation (N3/W7).
+        """
+        with self.session.begin_nested():
+            incident = self.session.get(Incident, incident_id, populate_existing=True)
+            if incident is None:
+                raise WorkflowViolation("not_found", 404)
+            decision = IncidentPolicy().evaluate(principal, incident, "work")
+            if not decision.allowed:
+                raise WorkflowViolation(decision.code, decision.http_status)
+            if incident.version != payload.expected_version:
+                raise WorkflowViolation("version_conflict", 409)
+            if incident.status != "assigned":
+                raise WorkflowViolation("invalid_transition", 409)
+
+            now = self.clock()
+            if now.tzinfo is None or now.utcoffset() is None:
+                raise ValueError("Acknowledgment clock must include timezone")
+            now = now.astimezone(UTC)
+            before = assignment_snapshot(incident)
+            result = self.session.execute(
+                update(Incident)
+                .where(
+                    Incident.id == incident_id,
+                    Incident.version == payload.expected_version,
+                    Incident.status == "assigned",
+                    Incident.department_id == incident.department_id,
+                    Incident.assigned_handler_id == incident.assigned_handler_id,
+                    Incident.acknowledged_at == incident.acknowledged_at,
+                )
+                .values(
+                    status="in_progress",
+                    version=Incident.version + 1,
+                    acknowledged_at=func.coalesce(Incident.acknowledged_at, now),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                raise WorkflowViolation("version_conflict", 409)
+
+            actor_id = UUID(principal.user_id)
+            history = StatusHistory(
+                incident_id=incident_id,
+                actor_id=actor_id,
+                from_status="assigned",
+                to_status="in_progress",
+                incident_version=payload.expected_version + 1,
+                visibility="public",
+                created_at=now,
+            )
+            repository = WorkflowRepository(self.session)
+            repository.add_history(history)
+            self.session.refresh(incident)
+            repository.add_audit(
+                AuditLog(
+                    incident_id=incident_id,
+                    actor_id=actor_id,
+                    action="incident.acknowledged",
+                    request_id=request_id,
+                    created_at=now,
+                    before=before,
+                    after=assignment_snapshot(incident),
+                )
+            )
+            self.session.flush()
+            # Same command response envelope as /assign, but this ID is a
+            # real status_history row because acknowledgment changes status.
+            response = AssignmentResponse(
+                incident=AssignmentIncident.model_validate(incident),
+                history_id=history.id,
             )
         return response
