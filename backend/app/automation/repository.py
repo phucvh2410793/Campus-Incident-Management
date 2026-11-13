@@ -141,8 +141,14 @@ class OutboxRepository:
         lease_token: str | None = None,
         backoff_base_seconds: int = 5,
         now: datetime | None = None,
+        retryable: bool = True,
+        max_backoff_seconds: int = 300,
     ) -> bool:
-        """Record an attempt failure. Retries with exponential backoff or marks as failed."""
+        """Record an attempt failure. Retries with bounded exponential backoff.
+
+        ``retryable=False`` (e.g. a permanent 4xx rejection from n8n) sends the
+        event straight to dead-letter instead of burning the remaining attempts.
+        """
         current_time = now or _utc_now()
         record = self.session.get(OutboxEvent, event_id)
         if not record:
@@ -154,9 +160,10 @@ class OutboxRepository:
         # Sanitize error message to ensure no sensitive passwords/secrets are logged
         clean_msg = error_message[:1000] if error_message else "Unknown error"
 
-        if record.attempt_count < record.max_attempts:
-            # Exponential backoff: base * 2^(attempt - 1)
+        if retryable and record.attempt_count < record.max_attempts:
+            # Exponential backoff: base * 2^(attempt - 1), clamped to the cap
             backoff_sec = backoff_base_seconds * (2 ** max(0, record.attempt_count - 1))
+            backoff_sec = max(0, min(backoff_sec, max_backoff_seconds))
             record.status = "pending"
             record.next_attempt_at = current_time + timedelta(seconds=backoff_sec)
         else:
@@ -200,6 +207,51 @@ class OutboxRepository:
 
     def get_event(self, event_id: uuid.UUID) -> OutboxEvent | None:
         return self.session.get(OutboxEvent, event_id)
+
+    def list_processing_events(
+        self, now: datetime | None = None, include_unexpired: bool = False
+    ) -> list[OutboxEvent]:
+        """Return events currently owned by a worker (used for restart recovery).
+
+        By default only leases that already expired are returned, which is the
+        set a recovering worker is allowed to take back.
+        """
+        stmt = sa.select(OutboxEvent).where(OutboxEvent.status == "processing")
+        if not include_unexpired:
+            current_time = now or _utc_now()
+            stmt = stmt.where(
+                sa.or_(
+                    OutboxEvent.lease_expires_at.is_(None),
+                    OutboxEvent.lease_expires_at <= current_time,
+                )
+            )
+        stmt = stmt.order_by(OutboxEvent.created_at.asc())
+        return list(self.session.scalars(stmt).all())
+
+    def list_failed_events(
+        self,
+        limit: int = 50,
+        after_created_at: datetime | None = None,
+        after_id: uuid.UUID | None = None,
+    ) -> list[OutboxEvent]:
+        """List dead-letter events for admin inspection, oldest first.
+
+        Uses a keyset cursor on ``(created_at, id)`` so paging stays stable while
+        new failures arrive.
+        """
+        stmt = sa.select(OutboxEvent).where(OutboxEvent.status == "failed")
+        if after_created_at is not None and after_id is not None:
+            stmt = stmt.where(
+                sa.or_(
+                    OutboxEvent.created_at > after_created_at,
+                    sa.and_(
+                        OutboxEvent.created_at == after_created_at,
+                        OutboxEvent.id > after_id,
+                    ),
+                )
+            )
+        stmt = stmt.order_by(OutboxEvent.created_at.asc(), OutboxEvent.id.asc()).limit(limit)
+        return list(self.session.scalars(stmt).all())
 
 
 class NotificationRepository:
