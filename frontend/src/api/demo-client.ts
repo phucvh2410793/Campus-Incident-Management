@@ -1,5 +1,11 @@
 import { mockApi } from '../mocks/mock-api-service.ts'
-import { mockN7StaffRoleApi, type AddCommentInput } from '../mocks/n7-role-mock-api.ts'
+import {
+  mockN7StaffRoleApi,
+  type AddCommentInput,
+  type TriageInput,
+  type AssignInput,
+  type PriorityInput,
+} from '../mocks/n7-role-mock-api.ts'
 import type { UserSummary } from '../types/auth.ts'
 import type { AttachmentSummary, Comment, HistoryItem, IncidentResponse, IncidentSummary, Priority, Status } from '../types/incident.ts'
 
@@ -48,5 +54,18 @@ export const demoClient = {
   async getIncidentAttachments(id: string): Promise<AttachmentSummary[]> {
     if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem tệp đính kèm.')
     return mockN7StaffRoleApi.getIncidentAttachments(id, session.user)
+  },
+  // N7-W05: Triage, Phân công/chuyển bộ phận, Đổi priority kèm reason
+  async triageIncident(id: string, input: TriageInput): Promise<IncidentResponse> {
+    if (!session) throw new Error('Yêu cầu đăng nhập trước khi phân loại Triage.')
+    return mockN7StaffRoleApi.triageIncident(id, input, session.user)
+  },
+  async assignIncident(id: string, input: AssignInput): Promise<IncidentResponse> {
+    if (!session) throw new Error('Yêu cầu đăng nhập trước khi phân công sự cố.')
+    return mockN7StaffRoleApi.assignIncident(id, input, session.user)
+  },
+  async adjustPriority(id: string, input: PriorityInput): Promise<IncidentResponse> {
+    if (!session) throw new Error('Yêu cầu đăng nhập trước khi điều chỉnh độ ưu tiên.')
+    return mockN7StaffRoleApi.adjustPriority(id, input, session.user)
   },
 }
