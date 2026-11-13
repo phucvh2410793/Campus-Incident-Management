@@ -1,0 +1,278 @@
+.n6-phishing-page {
+  max-width: 940px;
+  margin: 0 auto;
+}
+
+.n6-phishing-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+/* Cảnh báo an ninh bảo mật: Chặn nhập Secret / Password / OTP */
+.n6-security-warning {
+  padding: 14px 18px;
+  border: 1.5px solid #2563eb;
+  border-left-width: 5px;
+  border-radius: var(--radius-sm);
+  background: #eff6ff;
+  color: #1e40af;
+  line-height: 1.55;
+  font-size: 0.92rem;
+  margin-top: 14px;
+}
+
+.n6-security-warning strong {
+  color: #1e3a8a;
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.n6-security-warning em {
+  font-style: normal;
+  font-weight: 700;
+  color: #b91c1c;
+}
+
+/* Grid các trường nhập liệu */
+.n6-phishing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.n6-phishing-grid label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.n6-phishing-grid input,
+.n6-phishing-grid textarea,
+.n6-phishing-grid select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--text-primary);
+  font: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.n6-phishing-grid input:focus,
+.n6-phishing-grid textarea:focus,
+.n6-phishing-grid select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+
+.n6-phishing-grid textarea {
+  resize: vertical;
+}
+
+.n6-phishing-grid [aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
+.n6-form-wide {
+  grid-column: 1 / -1;
+}
+
+.n6-field-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* ========================================================================= */
+/* TIÊU CHÍ HOÀN THÀNH: BA TRẠNG THÁI TƯƠNG TÁC PHÂN BIỆT RÕ                 */
+/* ========================================================================= */
+.n6-interaction-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.n6-interaction-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.n6-interaction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.interaction-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.interaction-card input[type="radio"] {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: auto;
+  min-height: auto;
+}
+
+.interaction-card:hover {
+  border-color: #93c5fd;
+  background: #f8fafc;
+}
+
+/* 1. Trạng thái Chưa tương tác (None) - Xanh lá */
+.interaction-card.card-none.selected {
+  border-color: #059669;
+  background: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
+}
+
+.interaction-card.card-none .interaction-badge {
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* 2. Trạng thái Đã bấm liên kết (Clicked Link) - Vàng cam */
+.interaction-card.card-clicked.selected {
+  border-color: #d97706;
+  background: #fffbeb;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.2);
+}
+
+.interaction-card.card-clicked .interaction-badge {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* 3. Trạng thái Đã nhập thông tin (Entered Info) - Đỏ khẩn cấp P1 */
+.interaction-card.card-entered.selected {
+  border-color: #dc2626;
+  background: #fef2f2;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+
+.interaction-card.card-entered .interaction-badge {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.interaction-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.interaction-icon {
+  font-size: 1.25rem;
+}
+
+.interaction-name {
+  font-weight: 700;
+  font-size: 0.925rem;
+  color: var(--text-primary);
+}
+
+.interaction-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.725rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  margin-bottom: 8px;
+}
+
+.interaction-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.interaction-action-guide {
+  font-size: 0.775rem;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.03);
+  margin-top: auto;
+}
+
+.card-none .interaction-action-guide {
+  color: #166534;
+}
+
+.card-clicked .interaction-action-guide {
+  color: #92400e;
+}
+
+.card-entered .interaction-action-guide {
+  color: #991b1b;
+}
+
+/* Option chưa rõ */
+.interaction-unknown-wrap {
+  margin-top: 6px;
+}
+
+.interaction-unknown-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.interaction-unknown-label input {
+  width: auto;
+  min-height: auto;
+}
+
+/* Banner phản hồi */
+.n6-form-notice {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.n6-form-notice.success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.n6-form-notice.error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+}
+
+@media (max-width: 768px) {
+  .n6-interaction-grid {
+    grid-template-columns: 1fr;
+  }
+  .n6-phishing-grid {
+    grid-template-columns: 1fr;
+  }
+}
