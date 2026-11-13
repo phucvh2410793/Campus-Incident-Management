@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from typing import Annotated, Protocol
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
+from sqlalchemy import and_, false, or_, true
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth.dependencies import get_current_user
 from app.incidents.models import Incident
@@ -98,6 +101,28 @@ class IncidentPolicy:
             ):
                 return AccessDecision(True)
         return AccessDecision(False, "forbidden", 403)
+
+    def visible_clause(self, principal: Principal) -> ColumnElement[bool]:
+        """Build the SQL scope used by list/detail queries with the same policy rules."""
+        if principal.role not in ROLES:
+            return false()
+        if principal.role == "administrator":
+            return true()
+
+        user_id = UUID(principal.user_id)
+        scopes = [Incident.reporter_id == user_id]
+        if principal.department_id is not None:
+            department_id = UUID(principal.department_id)
+            if principal.role == "department_manager":
+                scopes.append(Incident.department_id == department_id)
+            elif principal.role == "handler":
+                scopes.append(
+                    and_(
+                        Incident.department_id == department_id,
+                        Incident.assigned_handler_id == user_id,
+                    )
+                )
+        return or_(*scopes)
 
 
 def get_principal(
