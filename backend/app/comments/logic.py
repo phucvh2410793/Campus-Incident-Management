@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
 
-from app.auth.policy import Principal
+from app.auth.policy import IncidentPolicy, Principal
 from app.comments.contracts import CommentRequest
 from app.incidents.models import Incident
 from app.workflow.contracts import WorkflowViolation
@@ -33,26 +33,10 @@ class CommentData(BaseModel):
 
 
 def require_incident_access(principal: Principal, incident: Incident) -> None:
-    """N4 record-scope guard until N1's shared record policy is integrated."""
-    actor = principal.user_id
-    department = principal.department_id
-    allowed = (
-        principal.role == "administrator"
-        or (principal.role == "reporter" and actor == str(incident.reporter_id))
-        or (
-            principal.role == "handler"
-            and actor == str(incident.assigned_handler_id)
-            and department is not None
-            and department == str(incident.department_id)
-        )
-        or (
-            principal.role == "department_manager"
-            and department is not None
-            and department == str(incident.department_id)
-        )
-    )
-    if not allowed:
-        raise WorkflowViolation("not_found", 404)
+    """Keep the existing comment service interface backed by N1's shared policy."""
+    decision = IncidentPolicy().evaluate(principal, incident, "view")
+    if not decision.allowed:
+        raise WorkflowViolation(decision.code, decision.http_status)
 
 
 def prepare_comment(
@@ -64,9 +48,10 @@ def prepare_comment(
 
     Keep body raw in storage. Escaping belongs only at the output boundary.
     """
-    require_incident_access(principal, incident)
-    if request.visibility == "internal" and principal.role == "reporter":
-        raise WorkflowViolation("forbidden", 403)
+    action = "comment_internal" if request.visibility == "internal" else "comment_public"
+    decision = IncidentPolicy().evaluate(principal, incident, action)
+    if not decision.allowed:
+        raise WorkflowViolation(decision.code, decision.http_status)
     if request.expected_version != incident.version:
         raise WorkflowViolation("version_conflict", 409)
     return CommentData(
@@ -83,11 +68,12 @@ def serialize_comment(principal: Principal, incident: Incident, comment) -> dict
     """Return whitelisted fields and escaped text; never return hidden records."""
     require_incident_access(principal, incident)
     # Inspect scope/visibility before reading the body or validating other fields.
-    if comment.incident_id != incident.id or (
-        comment.visibility != "public"
-        and (comment.visibility != "internal" or principal.role == "reporter")
-    ):
+    if comment.incident_id != incident.id or comment.visibility not in {"public", "internal"}:
         raise WorkflowViolation("not_found", 404)
+    if comment.visibility == "internal":
+        decision = IncidentPolicy().evaluate(principal, incident, "read_internal_comment")
+        if not decision.allowed:
+            raise WorkflowViolation(decision.code, decision.http_status)
     data = CommentData.model_validate(comment)
     if data.created_at.tzinfo is None or data.created_at.utcoffset() is None:
         raise ValueError("Comment timestamp must include timezone")
@@ -100,12 +86,15 @@ def serialize_comment(principal: Principal, incident: Incident, comment) -> dict
 def serialize_comments(principal: Principal, incident: Incident, comments) -> list[dict]:
     """Filter visibility defensively even when the repository supplied all rows."""
     require_incident_access(principal, incident)
+    can_read_internal = (
+        IncidentPolicy().evaluate(principal, incident, "read_internal_comment").allowed
+    )
     return [
         serialize_comment(principal, incident, comment)
         for comment in comments
         if comment.incident_id == incident.id
         and (
             comment.visibility == "public"
-            or (comment.visibility == "internal" and principal.role != "reporter")
+            or (comment.visibility == "internal" and can_read_internal)
         )
     ]

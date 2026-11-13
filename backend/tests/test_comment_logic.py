@@ -150,6 +150,31 @@ def test_old_handler_loses_access_after_reassignment(case):
         serialize_comments(principals["handler"], incident, [comment(incident)])
 
 
+def test_staff_reporter_can_use_public_comments_but_not_internal(case):
+    incident, principals = case
+    owner = Principal(
+        principals["reporter"].user_id,
+        "handler",
+        principals["handler"].department_id,
+    )
+    public = prepare_comment(
+        owner,
+        incident,
+        CommentRequest(body="My report update", visibility="public", expected_version=3),
+    )
+    assert public.actor_id == incident.reporter_id
+    with pytest.raises(WorkflowViolation) as write_error:
+        prepare_comment(
+            owner,
+            incident,
+            CommentRequest(body="Internal", visibility="internal", expected_version=3),
+        )
+    assert write_error.value.http_status == 403
+    with pytest.raises(WorkflowViolation) as read_error:
+        serialize_comment(owner, incident, comment(incident, "internal"))
+    assert read_error.value.http_status == 404
+
+
 @pytest.mark.parametrize("role", ["handler", "manager"])
 def test_old_department_loses_access(case, role):
     incident, principals = case
