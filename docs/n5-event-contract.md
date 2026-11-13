@@ -167,3 +167,60 @@ Nằm tại `workflows/mock-event-receiver.json`, tiếp nhận webhook POST, ki
 - Test outbox claim, retry và notification W2: `backend/tests/test_outbox_repository.py`
 - Test service bearer auth, user token rejection, rotation và HMAC W3: `backend/tests/test_automation_service_bearer.py`
 - Test dispatcher ký HMAC, backoff, dead-letter, n8n down và phục hồi sau restart W4: `backend/tests/test_automation_dispatcher.py`
+- Test workflow W5 (chữ ký giả, timestamp quá hạn/tương lai, event trùng, run ID): `backend/tests/test_automation_workflow.py`
+
+## 10. Workflow webhook xử lý event (W5)
+
+`workflows/event-processor.json` là workflow n8n thật thay cho mock receiver W2:
+
+1. `Webhook Receiver` nhận `POST` tại path `events` và bật **Raw Body** để giữ nguyên
+   bytes phục vụ kiểm chữ ký.
+2. `Verify Signature` gọi `POST /internal/webhooks/verify` với raw body và ba header
+   `X-CIM-*`, dùng Header Auth credential `CIM Internal Service Bearer`.
+3. `Signature Valid?` chỉ cho đi tiếp khi response có `status="verified"`. Chữ ký sai,
+   body bị sửa, timestamp quá hạn/tương lai hoặc event ID sai bị trả `401`/`422`
+   tại `Respond Rejected`; outbox không bị thay đổi và không gọi evaluate.
+4. `Duplicate Check` gọi `GET /internal/events/{event_id}`. Nếu event đã `done`,
+   `Respond Duplicate` trả `200` với `duplicate=true` và bỏ qua evaluate lần hai.
+5. `Evaluate Incident` gọi `POST /internal/events/{event_id}/evaluate` với
+   `run_id = $execution.id`. Backend không tin `priority`, `department_id` hay
+   `reporter_id` từ body; kết quả evaluate là idempotent theo `event_id`.
+6. `Complete Event (Done)` hoặc `Complete Event (Failed)` gọi
+   `POST /internal/events/{event_id}/complete` để đóng vòng đời event.
+7. Mọi response đều có `run_id` (lấy từ execution ID của n8n); response xử lý thành
+   công còn có `event_id`, `duplicate` và object `evaluation`.
+
+### Cấu hình workflow
+
+| Thành phần | Giá trị |
+| --- | --- |
+| Backend URL trong n8n | `http://backend:8000` (hardcode trong 5 node HTTP; sửa nếu n8n chạy ngoài Compose) |
+| Credential gọi `/internal/*` | Header Auth tên `CIM Internal Service Bearer`, header `Authorization`, giá trị `Bearer <service token>` |
+| Webhook secret | `CIM_WEBHOOK_HMAC_SECRET` (hoặc rotation) ngoài Git, dùng chung với dispatcher |
+| Webhook path | `events` (`http://localhost:5678/webhook/events` khi chạy Compose) |
+
+Workflow không nhúng token hay HMAC secret vào JSON; chỉ chứa tham chiếu credential và
+expression `$execution.id`. Khi import, tạo credential trước, sau đó publish workflow.
+Nếu vẫn giữ `mock-event-receiver.json` ở cùng path `events`, phải tắt một trong hai
+workflow để tránh trùng webhook.
+
+### Hành vi theo tiêu chí W5
+
+| Ca | Kết quả |
+| --- | --- |
+| Event hợp lệ | `200 processed`, có `run_id`, event chuyển `done` |
+| Event giả / body bị sửa | `401 rejected`, outbox vẫn `pending`, không evaluate |
+| Timestamp quá hạn hoặc ở tương lai | `401 rejected`, không evaluate |
+| Event trùng đã `done` | `200 duplicate`, không evaluate lại, vẫn có `run_id` |
+| Evaluate lỗi | gọi complete `failed`, trả `502` kèm `run_id` để truy vết |
+
+Gửi thử một event đã ký từ máy local:
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\send-signed-event.py `
+  --url http://localhost:5678/webhook/events `
+  --secret $env:CIM_WEBHOOK_HMAC_SECRET
+```
+
+Thêm `--timestamp-offset -301` để kiểm tra nhánh từ chối event quá hạn. Chạy lại cùng
+`--event-id` sau khi event đã `done` để kiểm tra nhánh duplicate.
