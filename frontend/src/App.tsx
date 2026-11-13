@@ -6,10 +6,11 @@ import { ReporterHome } from './features/reporter-w2/ReporterHome.tsx'
 import { ReporterWireframeView } from './features/reporter-w1/ReporterWireframeView.tsx'
 import { WaterLeakReportForm } from './features/reporter-w3/WaterLeakReportForm.tsx'
 import { ElectricalHazardReportForm } from './features/reporter-w4/ElectricalHazardReportForm.tsx'
+import { PhishingReportForm } from './features/reporter-w5/PhishingReportForm.tsx'
 import { StaffManagementView } from './features/staff/StaffManagementView.tsx'
 
-type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/reporter/water-leak' | '/reporter/electrical-hazard' | '/staff' | '/health'
-const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/reporter/water-leak', '/reporter/electrical-hazard', '/staff', '/health']
+type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/reporter/water-leak' | '/reporter/electrical-hazard' | '/reporter/phishing' | '/staff' | '/health'
+const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/reporter/water-leak', '/reporter/electrical-hazard', '/reporter/phishing', '/staff', '/health']
 
 function currentRoute(): Route {
   const path = window.location.pathname
@@ -74,6 +75,7 @@ export default function App() {
         {canReport && <button type="button" className={`nav-link ${route === '/reporter' ? 'active' : ''}`} onClick={() => navigate('/reporter')}>Báo cáo của tôi</button>}
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/water-leak' ? 'active' : ''}`} onClick={() => navigate('/reporter/water-leak')}>Báo cáo rò nước</button>}
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/electrical-hazard' ? 'active' : ''}`} onClick={() => navigate('/reporter/electrical-hazard')}>Báo cáo nguy hiểm điện</button>}
+        {canReport && <button type="button" className={`nav-link ${route === '/reporter/phishing' ? 'active' : ''}`} onClick={() => navigate('/reporter/phishing')}>Báo cáo Phishing</button>}
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/wireframe' ? 'active' : ''}`} onClick={() => navigate('/reporter/wireframe')}>Mẫu giao diện báo cáo</button>}
         {canWork && <button type="button" className={`nav-link ${route === '/staff' ? 'active' : ''}`} onClick={() => navigate('/staff')}>Hàng đợi xử lý</button>}
         <button type="button" className={`nav-link ${route === '/health' ? 'active' : ''}`} onClick={() => navigate('/health')}>Kết nối API</button>
@@ -86,6 +88,7 @@ export default function App() {
       {allowed && route === '/reporter' && <ReporterHome />}
       {allowed && route === '/reporter/water-leak' && <WaterLeakReportForm />}
       {allowed && route === '/reporter/electrical-hazard' && <ElectricalHazardReportForm />}
+      {allowed && route === '/reporter/phishing' && <PhishingReportForm />}
       {allowed && route === '/reporter/wireframe' && <ReporterWireframeView />}
       {allowed && route === '/staff' && session && <StaffManagementView key={session.user.id} user={session.user} />}
       {allowed && route === '/health' && <HealthSection />}
