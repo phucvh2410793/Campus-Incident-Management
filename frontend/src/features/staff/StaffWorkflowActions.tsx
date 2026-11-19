@@ -2,12 +2,12 @@ import { useState, useId, type FormEvent } from 'react'
 import type { IncidentResponse, Priority } from '../../types/incident.ts'
 import type { UserSummary } from '../../types/auth.ts'
 import {
-  mockN7StaffRoleApi,
   type PermissionStatus,
   type TriageInput,
   type AssignInput,
   type PriorityInput,
 } from '../../mocks/n7-role-mock-api.ts'
+import { staffApiAdapter, type AdapterMode } from '../../api/staff-api-adapter.ts'
 import { DEPARTMENTS, MOCK_USERS } from '../../mocks/mock-users.ts'
 
 interface StaffWorkflowActionsProps {
@@ -18,7 +18,7 @@ interface StaffWorkflowActionsProps {
   onReloadIncident: () => Promise<IncidentResponse>
 }
 
-type ActionTabKey = 'triage' | 'assign' | 'priority'
+export type ActionTabKey = 'triage' | 'assign' | 'priority' | 'ack' | 'resolve' | 'close' | 'reopen'
 
 export function StaffWorkflowActions({
   incident,
@@ -27,10 +27,17 @@ export function StaffWorkflowActions({
   onIncidentUpdated,
   onReloadIncident,
 }: StaffWorkflowActionsProps) {
-  // Mặc định mở tab Triage nếu sự cố cần Triage; nếu không thì mở tab Phân công
-  const [activeActionTab, setActiveActionTab] = useState<ActionTabKey>(() =>
-    incident.triage_required ? 'triage' : 'assign'
-  )
+  // Mặc định tab phù hợp theo trạng thái
+  const [activeActionTab, setActiveActionTab] = useState<ActionTabKey>(() => {
+    if (incident.triage_required) return 'triage'
+    if (incident.status === 'assigned' && permissions.canAcknowledge) return 'ack'
+    if (incident.status === 'in_progress' && permissions.canResolve) return 'resolve'
+    if (incident.status === 'resolved' && permissions.canClose) return 'close'
+    return 'assign'
+  })
+
+  // Trạng thái chế độ Adapter
+  const [adapterMode, setAdapterMode] = useState<AdapterMode>(() => staffApiAdapter.getMode())
 
   // Danh sách các bộ phận hợp lệ để chuyển đến (loại trừ dept-triage)
   const validTargetDepartments = Object.values(DEPARTMENTS).filter(
@@ -72,7 +79,27 @@ export function StaffWorkflowActions({
   const [priorityFieldErrors, setPriorityFieldErrors] = useState<{ reason?: string; general?: string }>({})
   const [isSubmittingPriority, setIsSubmittingPriority] = useState(false)
 
-  // Thông báo xung đột phiên bản 409 (Optimistic Concurrency Control)
+  // 4. Form Tiếp nhận (Acknowledge)
+  const [isSubmittingAck, setIsSubmittingAck] = useState(false)
+  const [ackGeneralError, setAckGeneralError] = useState<string | null>(null)
+
+  // 5. Form Giải quyết (Resolve)
+  const [resolutionText, setResolutionText] = useState<string>('')
+  const [resolveReason, setResolveReason] = useState<string>('')
+  const [resolveFieldErrors, setResolveFieldErrors] = useState<{ resolution?: string; general?: string }>({})
+  const [isSubmittingResolve, setIsSubmittingResolve] = useState(false)
+
+  // 6. Form Đóng sự cố (Close)
+  const [closeReason, setCloseReason] = useState<string>('')
+  const [closeFieldErrors, setCloseFieldErrors] = useState<{ reason?: string; general?: string }>({})
+  const [isSubmittingClose, setIsSubmittingClose] = useState(false)
+
+  // 7. Form Mở lại sự cố (Reopen)
+  const [reopenReason, setReopenReason] = useState<string>('')
+  const [reopenFieldErrors, setReopenFieldErrors] = useState<{ reason?: string; general?: string }>({})
+  const [isSubmittingReopen, setIsSubmittingReopen] = useState(false)
+
+  // Thông báo xung đột phiên bản 409
   const [conflictNotice, setConflictNotice] = useState<{
     action: string
     oldVersion: number
@@ -86,11 +113,18 @@ export function StaffWorkflowActions({
   const triageReasonId = useId()
   const assignReasonId = useId()
   const priorityReasonId = useId()
+  const resolveResolutionId = useId()
+  const closeReasonId = useId()
+  const reopenReasonId = useId()
 
-  // Tự động cập nhật danh sách KTV khi đổi bộ phận ở form Phân công
   const availableHandlersForDept = Object.values(MOCK_USERS).filter(
     (u) => u.role === 'handler' && u.department_id === assignDeptId && u.is_active
   )
+
+  const handleToggleAdapterMode = (mode: AdapterMode) => {
+    staffApiAdapter.setMode(mode)
+    setAdapterMode(mode)
+  }
 
   // =========================================================================
   // XỬ LÝ LỖI 409 VERSION CONFLICT (TIÊU CHÍ HOÀN THÀNH CỐT LÕI)
@@ -98,45 +132,49 @@ export function StaffWorkflowActions({
   // =========================================================================
   const handleCatchError = async (
     actionLabel: string,
-    error: unknown,
-    setFieldErrors: (errs: { reason?: string; general?: string }) => void
+    err: unknown,
+    setLocalErrors: (errors: { reason?: string; general?: string }) => void
   ) => {
-    const errObj = error as { status?: number; error?: { code?: string; message?: string; details?: Array<{ field: string; reason: string }> } }
-    const isVersionConflict =
-      errObj?.status === 409 ||
-      errObj?.error?.code === 'version_conflict' ||
-      String(errObj?.error?.message || '').toLowerCase().includes('xung đột phiên bản') ||
-      String(errObj?.error?.message || '').toLowerCase().includes('version')
-
-    if (isVersionConflict) {
-      // 1. Tải lại phiên bản mới nhất từ server
-      const freshIncident = await onReloadIncident()
-      onIncidentUpdated(freshIncident)
-
-      // 2. Tiêu chí hoàn thành cốt lõi: TUYỆT ĐỐI KHÔNG LÀM MẤT DỮ LIỆU ĐANG NHẬP
-      // Các trường state `triageReason`, `assignReason`, `priorityReason` và các select
-      // được giữ nguyên vẹn 100%.
-      setConflictNotice({
-        action: actionLabel,
-        oldVersion: incident.version,
-        newVersion: freshIncident.version,
-        message: `⚠️ Xung đột phiên bản (HTTP 409): Sự cố vừa được cập nhật trên hệ thống lên phiên bản v${freshIncident.version}. Dữ liệu và lý do bạn vừa nhập đã được bảo lưu đầy đủ. Vui lòng kiểm tra lại thông tin và nhấn gửi lại để hoàn tất.`,
-      })
-      setFieldErrors({ general: 'Xung đột phiên bản (HTTP 409). Dữ liệu nhập đã được bảo lưu. Vui lòng nhấn gửi lại.' })
-      return true
+    const errObj = err as {
+      error?: { code?: string; message?: string; details?: Array<{ field: string; reason: string }> }
     }
+    const errorCode = errObj?.error?.code
+    const errorMsg = errObj?.error?.message || 'Có lỗi xảy ra khi thực hiện thao tác.'
 
-    // Xử lý lỗi validation từ server
-    if (errObj?.error?.code === 'validation_error' && errObj.error.details) {
-      const reasonErr = errObj.error.details.find((d) => d.field === 'reason' || d.field.includes('reason'))
-      if (reasonErr) {
-        setFieldErrors({ reason: reasonErr.reason || 'Lý do không hợp lệ.' })
-        return false
+    if (errorCode === 'version_conflict') {
+      const oldVer = incident.version
+      try {
+        const fresh = await onReloadIncident()
+        setConflictNotice({
+          action: actionLabel,
+          oldVersion: oldVer,
+          newVersion: fresh.version,
+          message: `Sự cố đã được người khác cập nhật lên phiên bản v${fresh.version}. Biểu mẫu đã tự động đồng bộ mã phiên bản mới nhất. Dữ liệu lý do bạn vừa nhập vẫn được giữ nguyên đầy đủ bên dưới để bạn rà soát và gửi lại!`,
+        })
+      } catch {
+        setConflictNotice({
+          action: actionLabel,
+          oldVersion: oldVer,
+          newVersion: oldVer + 1,
+          message: 'Phát hiện xung đột phiên bản. Vui lòng thử gửi lại.',
+        })
       }
+      return
     }
 
-    setFieldErrors({ general: errObj?.error?.message || 'Có lỗi xảy ra khi thực hiện thao tác.' })
-    return false
+    if (errorCode === 'validation_error' && errObj?.error?.details) {
+      const fieldMap: Record<string, string> = {}
+      for (const d of errObj.error.details) {
+        fieldMap[d.field] = d.reason
+      }
+      setLocalErrors({
+        reason: fieldMap['reason'] || fieldMap['resolution'] || undefined,
+        general: errorMsg,
+      })
+      return
+    }
+
+    setLocalErrors({ general: errorMsg })
   }
 
   // =========================================================================
@@ -147,7 +185,6 @@ export function StaffWorkflowActions({
     setConflictNotice(null)
     setSuccessNotice(null)
 
-    // Tiêu chí hoàn thành cốt lõi: FORM BẮT REASON
     if (!triageReason.trim()) {
       setTriageFieldErrors({ reason: 'Vui lòng nhập lý do phân loại Triage (bắt buộc).' })
       return
@@ -168,7 +205,7 @@ export function StaffWorkflowActions({
         expected_version: expectedVersion,
       }
 
-      const updated = await mockN7StaffRoleApi.triageIncident(incident.id, input, currentUser)
+      const updated = await staffApiAdapter.triageIncident(incident.id, input, currentUser)
       onIncidentUpdated(updated)
       setSuccessNotice(`✅ Phân loại Triage thành công! Sự cố đã được chuyển sang "${DEPARTMENTS[triageDeptId]?.name}" với độ ưu tiên ${triagePriority?.toUpperCase()} (Phiên bản v${updated.version}).`)
       setTriageReason('')
@@ -187,7 +224,6 @@ export function StaffWorkflowActions({
     setConflictNotice(null)
     setSuccessNotice(null)
 
-    // Tiêu chí hoàn thành cốt lõi: FORM BẮT REASON
     if (!assignReason.trim()) {
       setAssignFieldErrors({ reason: 'Vui lòng nhập lý do phân công / chuyển bộ phận (bắt buộc).' })
       return
@@ -208,7 +244,7 @@ export function StaffWorkflowActions({
         expected_version: expectedVersion,
       }
 
-      const updated = await mockN7StaffRoleApi.assignIncident(incident.id, input, currentUser)
+      const updated = await staffApiAdapter.assignIncident(incident.id, input, currentUser)
       onIncidentUpdated(updated)
       const assignedHandlerObj = assignHandlerId ? Object.values(MOCK_USERS).find((u) => u.id === assignHandlerId) : null
       const handlerText = assignedHandlerObj ? `cho KTV ${assignedHandlerObj.display_name}` : 'cho toàn bộ phận'
@@ -229,7 +265,6 @@ export function StaffWorkflowActions({
     setConflictNotice(null)
     setSuccessNotice(null)
 
-    // Tiêu chí hoàn thành cốt lõi: FORM BẮT REASON
     if (!priorityReason.trim()) {
       setPriorityFieldErrors({ reason: 'Vui lòng nhập lý do điều chỉnh độ ưu tiên (bắt buộc).' })
       return
@@ -249,7 +284,7 @@ export function StaffWorkflowActions({
         expected_version: expectedVersion,
       }
 
-      const updated = await mockN7StaffRoleApi.adjustPriority(incident.id, input, currentUser)
+      const updated = await staffApiAdapter.adjustPriority(incident.id, input, currentUser)
       onIncidentUpdated(updated)
       setSuccessNotice(`✅ Điều chỉnh độ ưu tiên thành công! Sự cố chuyển sang mức ${newPriority?.toUpperCase()}, hạn SLA đã được tính lại từ ngày báo cáo (Phiên bản v${updated.version}).`)
       setPriorityReason('')
@@ -257,6 +292,134 @@ export function StaffWorkflowActions({
       await handleCatchError('Điều chỉnh độ ưu tiên', err, setPriorityFieldErrors)
     } finally {
       setIsSubmittingPriority(false)
+    }
+  }
+
+  // =========================================================================
+  // 4. SUBMIT TIẾP NHẬN SỰ CỐ (ACKNOWLEDGE) - ASSIGNED -> IN_PROGRESS
+  // =========================================================================
+  const handleSubmitAcknowledge = async (e: FormEvent, simulateConflictVersion?: number) => {
+    e.preventDefault()
+    setConflictNotice(null)
+    setSuccessNotice(null)
+    setAckGeneralError(null)
+    setIsSubmittingAck(true)
+
+    try {
+      const expectedVersion = simulateConflictVersion ?? incident.version
+      const updated = await staffApiAdapter.acknowledgeIncident(incident.id, expectedVersion, currentUser)
+      onIncidentUpdated(updated)
+      setSuccessNotice(`✅ Tiếp nhận sự cố thành công! Trạng thái chuyển sang "Đang xử lý" (in_progress), đồng hồ SLA tiếp nhận đã dừng (Phiên bản v${updated.version}).`)
+    } catch (err: unknown) {
+      await handleCatchError('Tiếp nhận sự cố', err, (errs) => setAckGeneralError(errs.general || null))
+    } finally {
+      setIsSubmittingAck(false)
+    }
+  }
+
+  // =========================================================================
+  // 5. SUBMIT GIẢI QUYẾT SỰ CỐ (RESOLVE) - IN_PROGRESS -> RESOLVED
+  // =========================================================================
+  const handleSubmitResolve = async (e: FormEvent, simulateConflictVersion?: number) => {
+    e.preventDefault()
+    setConflictNotice(null)
+    setSuccessNotice(null)
+
+    if (!resolutionText.trim()) {
+      setResolveFieldErrors({ resolution: 'Bắt buộc nhập kết quả / nội dung đã xử lý để giải quyết sự cố.' })
+      return
+    }
+    if (resolutionText.trim().length < 5) {
+      setResolveFieldErrors({ resolution: 'Nội dung xử lý cần tối thiểu 5 ký tự.' })
+      return
+    }
+    setResolveFieldErrors({})
+    setIsSubmittingResolve(true)
+
+    try {
+      const expectedVersion = simulateConflictVersion ?? incident.version
+      const updated = await staffApiAdapter.resolveIncident(
+        incident.id,
+        {
+          expected_version: expectedVersion,
+          resolution: resolutionText.trim(),
+          reason: resolveReason.trim() || undefined,
+        },
+        currentUser
+      )
+      onIncidentUpdated(updated)
+      setSuccessNotice(`✅ Đã ghi nhận giải quyết sự cố thành công! Trạng thái chuyển sang "Đã giải quyết" (resolved) (Phiên bản v${updated.version}).`)
+      setResolutionText('')
+      setResolveReason('')
+    } catch (err: unknown) {
+      await handleCatchError('Giải quyết sự cố', err, setResolveFieldErrors)
+    } finally {
+      setIsSubmittingResolve(false)
+    }
+  }
+
+  // =========================================================================
+  // 6. SUBMIT ĐÓNG SỰ CỐ (CLOSE) - RESOLVED -> CLOSED
+  // =========================================================================
+  const handleSubmitClose = async (e: FormEvent, simulateConflictVersion?: number) => {
+    e.preventDefault()
+    setConflictNotice(null)
+    setSuccessNotice(null)
+    setCloseFieldErrors({})
+    setIsSubmittingClose(true)
+
+    try {
+      const expectedVersion = simulateConflictVersion ?? incident.version
+      const updated = await staffApiAdapter.closeIncident(
+        incident.id,
+        {
+          expected_version: expectedVersion,
+          reason: closeReason.trim() || 'Đã kiểm tra, nghiệm thu và hoàn tất đóng sự cố.',
+        },
+        currentUser
+      )
+      onIncidentUpdated(updated)
+      setSuccessNotice(`✅ Đã nghiệm thu và đóng sự cố thành công! Trạng thái chuyển sang "Đã đóng" (closed) (Phiên bản v${updated.version}).`)
+      setCloseReason('')
+    } catch (err: unknown) {
+      await handleCatchError('Đóng sự cố', err, setCloseFieldErrors)
+    } finally {
+      setIsSubmittingClose(false)
+    }
+  }
+
+  // =========================================================================
+  // 7. SUBMIT MỞ LẠI SỰ CỐ (REOPEN) - RESOLVED/CLOSED -> IN_PROGRESS
+  // =========================================================================
+  const handleSubmitReopen = async (e: FormEvent, simulateConflictVersion?: number) => {
+    e.preventDefault()
+    setConflictNotice(null)
+    setSuccessNotice(null)
+
+    if (!reopenReason.trim() || reopenReason.trim().length < 5) {
+      setReopenFieldErrors({ reason: 'Bắt buộc nhập lý do mở lại sự cố (tối thiểu 5 ký tự).' })
+      return
+    }
+    setReopenFieldErrors({})
+    setIsSubmittingReopen(true)
+
+    try {
+      const expectedVersion = simulateConflictVersion ?? incident.version
+      const updated = await staffApiAdapter.reopenIncident(
+        incident.id,
+        {
+          expected_version: expectedVersion,
+          reason: reopenReason.trim(),
+        },
+        currentUser
+      )
+      onIncidentUpdated(updated)
+      setSuccessNotice(`✅ Đã mở lại sự cố thành công! Trạng thái chuyển về "Đang xử lý" (in_progress) (Phiên bản v${updated.version}).`)
+      setReopenReason('')
+    } catch (err: unknown) {
+      await handleCatchError('Mở lại sự cố', err, setReopenFieldErrors)
+    } finally {
+      setIsSubmittingReopen(false)
     }
   }
 
@@ -286,7 +449,7 @@ export function StaffWorkflowActions({
         </aside>
       )}
 
-      {/* CẢNH BÁO XUNG ĐỘT PHIÊN BẢN (HTTP 409) - TIÊU CHÍ: 409 TẢI LẠI VÀ KHÔNG MẤT DỮ LIỆU NHẬP */}
+      {/* CẢNH BÁO XUNG ĐỘT PHIÊN BẢN (HTTP 409) */}
       {conflictNotice && (
         <div className="workflow-conflict-banner" role="alert" aria-live="assertive">
           <span className="workflow-conflict-banner-icon">⚠️</span>
@@ -308,7 +471,32 @@ export function StaffWorkflowActions({
         </div>
       )}
 
-      {/* SUB-NAV CHO 3 THAO TÁC CỐT LÕI */}
+      {/* HEADER: CHẾ ĐỘ ADAPTER THẬT / MOCK */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', marginBottom: '12px' }}>
+        <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+          <strong>Cầu nối Adapter:</strong> {adapterMode === 'real' ? '🚀 API Thật (FastAPI Backend + PostgreSQL DB)' : '🧪 Mock Adapter (In-Memory Engine)'}
+        </div>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            type="button"
+            className={`btn btn-xs ${adapterMode === 'real' ? 'btn-primary' : 'btn-outline'}`}
+            style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+            onClick={() => handleToggleAdapterMode('real')}
+          >
+            API Thật (DB)
+          </button>
+          <button
+            type="button"
+            className={`btn btn-xs ${adapterMode === 'mock' ? 'btn-primary' : 'btn-outline'}`}
+            style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+            onClick={() => handleToggleAdapterMode('mock')}
+          >
+            Mock Adapter
+          </button>
+        </div>
+      </div>
+
+      {/* SUB-NAV CHO TOÀN BỘ CHU TRÌNH VÒNG ĐỜI: TRIAGE -> ASSIGN -> ACK -> RESOLVE -> CLOSE */}
       <div className="workflow-subnav-pills" role="tablist" aria-label="Các thao tác điều phối sự cố">
         <button
           type="button"
@@ -317,7 +505,7 @@ export function StaffWorkflowActions({
           className={`workflow-subnav-pill ${activeActionTab === 'triage' ? 'active' : ''}`}
           onClick={() => setActiveActionTab('triage')}
         >
-          ⚡ Triage phân loại {incident.triage_required && <span className="pill-badge-warning">Cần xử lý</span>}
+          ⚡ Triage {incident.triage_required && <span className="pill-badge-warning">Cần xử lý</span>}
         </button>
 
         <button
@@ -327,7 +515,7 @@ export function StaffWorkflowActions({
           className={`workflow-subnav-pill ${activeActionTab === 'assign' ? 'active' : ''}`}
           onClick={() => setActiveActionTab('assign')}
         >
-          👥 Phân công / Chuyển bộ phận
+          👥 Phân công
         </button>
 
         <button
@@ -337,8 +525,54 @@ export function StaffWorkflowActions({
           className={`workflow-subnav-pill ${activeActionTab === 'priority' ? 'active' : ''}`}
           onClick={() => setActiveActionTab('priority')}
         >
-          ⏱️ Đổi độ ưu tiên kèm Reason
+          ⏱️ Đổi Priority
         </button>
+
+        {/* Tab Tiếp nhận: khả dụng khi sự cố ở trạng thái assigned */}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeActionTab === 'ack'}
+          className={`workflow-subnav-pill ${activeActionTab === 'ack' ? 'active' : ''}`}
+          onClick={() => setActiveActionTab('ack')}
+        >
+          📥 Tiếp nhận (Ack) {incident.status === 'assigned' && <span className="pill-badge-warning">Chờ nhận</span>}
+        </button>
+
+        {/* Tab Giải quyết: khả dụng khi sự cố ở trạng thái in_progress */}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeActionTab === 'resolve'}
+          className={`workflow-subnav-pill ${activeActionTab === 'resolve' ? 'active' : ''}`}
+          onClick={() => setActiveActionTab('resolve')}
+        >
+          🔨 Giải quyết {incident.status === 'in_progress' && <span className="pill-badge-info">Đang xử lý</span>}
+        </button>
+
+        {/* Tab Đóng: khả dụng khi sự cố ở trạng thái resolved */}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeActionTab === 'close'}
+          className={`workflow-subnav-pill ${activeActionTab === 'close' ? 'active' : ''}`}
+          onClick={() => setActiveActionTab('close')}
+        >
+          🔒 Nghiệm thu &amp; Đóng {incident.status === 'resolved' && <span className="pill-badge-success">Chờ đóng</span>}
+        </button>
+
+        {/* Tab Mở lại: khả dụng khi sự cố đã resolved hoặc closed */}
+        {(incident.status === 'resolved' || incident.status === 'closed') && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeActionTab === 'reopen'}
+            className={`workflow-subnav-pill ${activeActionTab === 'reopen' ? 'active' : ''}`}
+            onClick={() => setActiveActionTab('reopen')}
+          >
+            🔄 Mở lại sự cố
+          </button>
+        )}
       </div>
 
       {/* =================================================================== */}
@@ -439,15 +673,14 @@ export function StaffWorkflowActions({
 
             <div className="workflow-action-footer">
               <div className="workflow-footer-left">
-                {/* NÚT THỬ NGHIỆM GIẢ LẬP XUNG ĐỘT 409 DÀNH CHO REVIEW / TEST */}
                 <button
                   type="button"
                   className="btn btn-sm btn-outline btn-simulate-conflict"
-                  title="Gửi kèm expected_version cũ để mô phỏng HTTP 409 Version Conflict và chứng minh dữ liệu nhập không bị mất"
+                  title="Gửi kèm expected_version cũ để mô phỏng HTTP 409 Version Conflict"
                   onClick={(e) => handleSubmitTriage(e, incident.version - 1)}
                   disabled={isSubmittingTriage}
                 >
-                  ⚡ Giả lập xung đột 409 (Test kiểm thử)
+                  ⚡ Giả lập xung đột 409 (Test)
                 </button>
               </div>
 
@@ -457,7 +690,7 @@ export function StaffWorkflowActions({
                   className="btn btn-primary"
                   disabled={isSubmittingTriage}
                 >
-                  {isSubmittingTriage ? 'Đang phân loại…' : '⚡ Hoàn tất Triage & Chuyển bộ phận'}
+                  {isSubmittingTriage ? 'Đang phân loại…' : '⚡ Xác nhận phân loại Triage'}
                 </button>
               </div>
             </div>
@@ -474,7 +707,7 @@ export function StaffWorkflowActions({
             <div>
               <h4 className="workflow-action-title">👥 Phân công &amp; Chuyển giao bộ phận</h4>
               <p className="workflow-action-subtitle">
-                Chỉ định kỹ thuật viên trực tiếp xử lý hoặc chuyển quyền phụ trách sang bộ phận chuyên môn khác.
+                Điều phối sự cố đến Ban phụ trách hoặc chỉ định đích danh Kỹ thuật viên (Handler).
               </p>
             </div>
             <span className="workflow-version-badge" title="Mã phiên bản hiện tại trên server">
@@ -484,7 +717,7 @@ export function StaffWorkflowActions({
 
           {!permissions.canAssign && (
             <div className="alert alert-warning" style={{ margin: '1rem 0' }}>
-              🔒 <em>Chỉ Quản lý bộ phận hoặc Quản trị viên mới có thẩm quyền phân công và chuyển bộ phận.</em>
+              🔒 <em>Chỉ Quản lý bộ phận hoặc Quản trị viên mới có thẩm quyền phân công sự cố.</em>
             </div>
           )}
 
@@ -492,7 +725,7 @@ export function StaffWorkflowActions({
             <div className="workflow-form-grid">
               <div className="workflow-field-group">
                 <label className="workflow-field-label" htmlFor="assign-dept-select">
-                  Bộ phận tiếp nhận <span className="workflow-field-label-required">(*)</span>
+                  Bộ phận phụ trách <span className="workflow-field-label-required">(*)</span>
                 </label>
                 <select
                   id="assign-dept-select"
@@ -536,11 +769,6 @@ export function StaffWorkflowActions({
                     </option>
                   ))}
                 </select>
-                {availableHandlersForDept.length === 0 && (
-                  <span className="workflow-hint-text">
-                    Bộ phận này chưa có KTV trực tiếp; sự cố sẽ được bàn giao chung cho trưởng ban điều phối.
-                  </span>
-                )}
               </div>
 
               <div className="workflow-field-group workflow-field-wide">
@@ -583,15 +811,14 @@ export function StaffWorkflowActions({
 
             <div className="workflow-action-footer">
               <div className="workflow-footer-left">
-                {/* NÚT THỬ NGHIỆM GIẢ LẬP XUNG ĐỘT 409 */}
                 <button
                   type="button"
                   className="btn btn-sm btn-outline btn-simulate-conflict"
-                  title="Gửi kèm expected_version cũ để mô phỏng HTTP 409 Version Conflict và chứng minh dữ liệu nhập không bị mất"
+                  title="Gửi kèm expected_version cũ để mô phỏng HTTP 409 Version Conflict"
                   onClick={(e) => handleSubmitAssign(e, incident.version - 1)}
                   disabled={isSubmittingAssign || !permissions.canAssign}
                 >
-                  ⚡ Giả lập xung đột 409 (Test kiểm thử)
+                  ⚡ Giả lập xung đột 409 (Test)
                 </button>
               </div>
 
@@ -729,15 +956,14 @@ export function StaffWorkflowActions({
 
             <div className="workflow-action-footer">
               <div className="workflow-footer-left">
-                {/* NÚT THỬ NGHIỆM GIẢ LẬP XUNG ĐỘT 409 */}
                 <button
                   type="button"
                   className="btn btn-sm btn-outline btn-simulate-conflict"
-                  title="Gửi kèm expected_version cũ để mô phỏng HTTP 409 Version Conflict và chứng minh dữ liệu nhập không bị mất"
+                  title="Gửi kèm expected_version cũ để mô phỏng HTTP 409 Version Conflict"
                   onClick={(e) => handleSubmitPriority(e, incident.version - 1)}
                   disabled={isSubmittingPriority || !permissions.canAdjustPriority}
                 >
-                  ⚡ Giả lập xung đột 409 (Test kiểm thử)
+                  ⚡ Giả lập xung đột 409 (Test)
                 </button>
               </div>
 
@@ -748,6 +974,256 @@ export function StaffWorkflowActions({
                   disabled={isSubmittingPriority || !permissions.canAdjustPriority}
                 >
                   {isSubmittingPriority ? 'Đang cập nhật…' : '⏱️ Cập nhật độ ưu tiên'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* 4. FORM TIẾP NHẬN SỰ CỐ (ACKNOWLEDGE) - N7-W08                       */}
+      {/* =================================================================== */}
+      {activeActionTab === 'ack' && (
+        <div className="workflow-action-card gui-fade-transition">
+          <div className="workflow-action-header">
+            <div>
+              <h4 className="workflow-action-title">📥 Tiếp nhận sự cố (Acknowledge)</h4>
+              <p className="workflow-action-subtitle">
+                Xác nhận đã có mặt hoặc bắt đầu tiếp nhận xử lý tại hiện trường. Hành động này sẽ chuyển trạng thái sang <strong>Đang xử lý (in_progress)</strong> và dừng đồng hồ đếm SLA.
+              </p>
+            </div>
+            <span className="workflow-version-badge">Phiên bản: <strong>v{incident.version}</strong></span>
+          </div>
+
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '12px', margin: '12px 0', fontSize: '0.85rem' }}>
+            <p style={{ margin: 0, color: '#1e40af' }}>
+              ℹ️ <strong>Quy định SLA:</strong> Khi Kỹ thuật viên nhấn Tiếp nhận, hệ thống sẽ lưu thời điểm <code>acknowledged_at</code> và đánh dấu mốc hoàn thành trách nhiệm tiếp nhận ban đầu.
+            </p>
+          </div>
+
+          {incident.status !== 'assigned' && (
+            <div className="alert alert-warning" style={{ margin: '1rem 0' }}>
+              ⚠️ Sự cố hiện đang ở trạng thái <strong>{incident.status}</strong> (chỉ sự cố ở trạng thái <em>assigned</em> mới cần tiếp nhận).
+            </div>
+          )}
+
+          {ackGeneralError && (
+            <div className="workflow-error-banner" role="alert">
+              ⚠️ {ackGeneralError}
+            </div>
+          )}
+
+          <div className="workflow-action-footer">
+            <div className="workflow-footer-left">
+              <button
+                type="button"
+                className="btn btn-sm btn-outline btn-simulate-conflict"
+                title="Gửi kèm expected_version cũ để kiểm thử 409"
+                onClick={(e) => handleSubmitAcknowledge(e, incident.version - 1)}
+                disabled={isSubmittingAck || incident.status !== 'assigned'}
+              >
+                ⚡ Giả lập xung đột 409 (Test)
+              </button>
+            </div>
+            <div className="workflow-footer-right">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={(e) => handleSubmitAcknowledge(e)}
+                disabled={isSubmittingAck || incident.status !== 'assigned'}
+              >
+                {isSubmittingAck ? 'Đang tiếp nhận…' : '📥 Xác nhận Tiếp nhận sự cố'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* 5. FORM GIẢI QUYẾT SỰ CỐ (RESOLVE) - N7-W08                          */}
+      {/* =================================================================== */}
+      {activeActionTab === 'resolve' && (
+        <div className="workflow-action-card gui-fade-transition">
+          <div className="workflow-action-header">
+            <div>
+              <h4 className="workflow-action-title">🔨 Hoàn tất xử lý &amp; Giải quyết sự cố (Resolve)</h4>
+              <p className="workflow-action-subtitle">
+                Ghi nhận kết quả khắc phục sự cố tại hiện trường. Bắt buộc nhập kết quả xử lý chi tiết (Resolution).
+              </p>
+            </div>
+            <span className="workflow-version-badge">Phiên bản: <strong>v{incident.version}</strong></span>
+          </div>
+
+          <form className="workflow-form" onSubmit={(e) => handleSubmitResolve(e)}>
+            <div className="workflow-form-grid">
+              <div className="workflow-field-group workflow-field-wide">
+                <label className="workflow-field-label" htmlFor={resolveResolutionId}>
+                  Kết quả xử lý sự cố (Resolution) <span className="workflow-field-label-required">(*) Bắt buộc</span>
+                </label>
+                <textarea
+                  id={resolveResolutionId}
+                  className={`workflow-textarea ${resolveFieldErrors.resolution ? 'has-error' : ''}`}
+                  rows={3}
+                  placeholder="Mô tả các biện pháp đã thực hiện: thay thế thiết bị, sửa đường ống, khóa tài khoản rò rỉ..."
+                  value={resolutionText}
+                  onChange={(e) => {
+                    setResolutionText(e.target.value)
+                    if (resolveFieldErrors.resolution) setResolveFieldErrors({})
+                  }}
+                />
+                <div className="workflow-field-help">
+                  {resolveFieldErrors.resolution ? (
+                    <span className="workflow-error-text">⚠️ {resolveFieldErrors.resolution}</span>
+                  ) : (
+                    <span className="workflow-char-counter">{resolutionText.length} ký tự (tối thiểu 5 ký tự)</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {resolveFieldErrors.general && (
+              <div className="workflow-error-banner" role="alert">⚠️ {resolveFieldErrors.general}</div>
+            )}
+
+            <div className="workflow-action-footer">
+              <div className="workflow-footer-left">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-simulate-conflict"
+                  onClick={(e) => handleSubmitResolve(e, incident.version - 1)}
+                  disabled={isSubmittingResolve}
+                >
+                  ⚡ Giả lập xung đột 409 (Test)
+                </button>
+              </div>
+              <div className="workflow-footer-right">
+                <button type="submit" className="btn btn-primary" disabled={isSubmittingResolve}>
+                  {isSubmittingResolve ? 'Đang gửi…' : '✓ Hoàn tất giải quyết sự cố'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* 6. FORM NGHIỆM THU & ĐÓNG SỰ CỐ (CLOSE) - N7-W08                    */}
+      {/* =================================================================== */}
+      {activeActionTab === 'close' && (
+        <div className="workflow-action-card gui-fade-transition">
+          <div className="workflow-action-header">
+            <div>
+              <h4 className="workflow-action-title">🔒 Nghiệm thu &amp; Đóng sự cố (Close)</h4>
+              <p className="workflow-action-subtitle">
+                Dành cho Trưởng ban hoặc Quản trị viên để đóng chính thức sự cố sau khi đã kiểm tra hiện trường.
+              </p>
+            </div>
+            <span className="workflow-version-badge">Phiên bản: <strong>v{incident.version}</strong></span>
+          </div>
+
+          <form className="workflow-form" onSubmit={(e) => handleSubmitClose(e)}>
+            <div className="workflow-form-grid">
+              <div className="workflow-field-group workflow-field-wide">
+                <label className="workflow-field-label" htmlFor={closeReasonId}>
+                  Ghi chú nghiệm thu đóng sự cố
+                </label>
+                <textarea
+                  id={closeReasonId}
+                  className="workflow-textarea"
+                  rows={2}
+                  placeholder="Ghi chú xác nhận hiện trường đã ổn định, sinh viên/giảng viên đã sử dụng lại bình thường..."
+                  value={closeReason}
+                  onChange={(e) => setCloseReason(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {closeFieldErrors.general && (
+              <div className="workflow-error-banner" role="alert">⚠️ {closeFieldErrors.general}</div>
+            )}
+
+            <div className="workflow-action-footer">
+              <div className="workflow-footer-left">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-simulate-conflict"
+                  onClick={(e) => handleSubmitClose(e, incident.version - 1)}
+                  disabled={isSubmittingClose}
+                >
+                  ⚡ Giả lập xung đột 409 (Test)
+                </button>
+              </div>
+              <div className="workflow-footer-right">
+                <button type="submit" className="btn btn-primary" disabled={isSubmittingClose}>
+                  {isSubmittingClose ? 'Đang đóng…' : '🔒 Xác nhận Đóng sự cố'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* 7. FORM MỞ LẠI SỰ CỐ (REOPEN) - N7-W08                               */}
+      {/* =================================================================== */}
+      {activeActionTab === 'reopen' && (
+        <div className="workflow-action-card gui-fade-transition">
+          <div className="workflow-action-header">
+            <div>
+              <h4 className="workflow-action-title">🔄 Mở lại sự cố (Reopen)</h4>
+              <p className="workflow-action-subtitle">
+                Mở lại sự cố nếu hiện trường tái phát lỗi hoặc việc xử lý chưa triệt để. Bắt buộc nêu rõ lý do.
+              </p>
+            </div>
+            <span className="workflow-version-badge">Phiên bản: <strong>v{incident.version}</strong></span>
+          </div>
+
+          <form className="workflow-form" onSubmit={(e) => handleSubmitReopen(e)}>
+            <div className="workflow-form-grid">
+              <div className="workflow-field-group workflow-field-wide">
+                <label className="workflow-field-label" htmlFor={reopenReasonId}>
+                  Lý do mở lại sự cố <span className="workflow-field-label-required">(*) Bắt buộc</span>
+                </label>
+                <textarea
+                  id={reopenReasonId}
+                  className={`workflow-textarea ${reopenFieldErrors.reason ? 'has-error' : ''}`}
+                  rows={3}
+                  placeholder="Nêu rõ lý do cần mở lại: rò nước tái phát sau 2 tiếng, ổ cắm vẫn bốc khói..."
+                  value={reopenReason}
+                  onChange={(e) => {
+                    setReopenReason(e.target.value)
+                    if (reopenFieldErrors.reason) setReopenFieldErrors({})
+                  }}
+                />
+                <div className="workflow-field-help">
+                  {reopenFieldErrors.reason ? (
+                    <span className="workflow-error-text">⚠️ {reopenFieldErrors.reason}</span>
+                  ) : (
+                    <span className="workflow-char-counter">{reopenReason.length} ký tự (tối thiểu 5 ký tự)</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {reopenFieldErrors.general && (
+              <div className="workflow-error-banner" role="alert">⚠️ {reopenFieldErrors.general}</div>
+            )}
+
+            <div className="workflow-action-footer">
+              <div className="workflow-footer-left">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-simulate-conflict"
+                  onClick={(e) => handleSubmitReopen(e, incident.version - 1)}
+                  disabled={isSubmittingReopen}
+                >
+                  ⚡ Giả lập xung đột 409 (Test)
+                </button>
+              </div>
+              <div className="workflow-footer-right">
+                <button type="submit" className="btn btn-primary" disabled={isSubmittingReopen}>
+                  {isSubmittingReopen ? 'Đang mở lại…' : '🔄 Xác nhận Mở lại sự cố'}
                 </button>
               </div>
             </div>
