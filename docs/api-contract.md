@@ -196,6 +196,19 @@ Mỗi POST dưới đây bắt buộc `expected_version`; backend kiểm tra quy
 | `resolved → in_progress` | Manager hoặc administrator | `reason` bắt buộc |
 | `closed → in_progress` | Manager hoặc administrator | `reason` bắt buộc |
 
+**Quy tắc W4 để review:** `/assign` chỉ chấp nhận `reported`, `assigned` và
+`in_progress`. Với `reported`, chuyển sang `assigned`; phân công lại giữ status.
+`resolved`/`closed` trả `409 invalid_transition`, phải trả lại/mở lại đúng luồng
+trước khi phân công. Bộ phận đích không được là `triage_queue`; handler nếu có
+phải đang hoạt động, có role `handler` và thuộc bộ phận đích. Cho phép handler
+null để phân công cho bộ phận. Chuyển khỏi triage xóa `triage_required`, không tự
+suy ra priority hoặc deadline. Giữ `assigned_at` đầu tiên và các mốc SLA cũ.
+
+Trong response `/assign`, `history_id` là ID của bản ghi `assignments` vừa tạo
+(lịch sử phân công, kể cả khi status không đổi). Chỉ khi status thật sự thay đổi
+mới thêm `status_history`; audit lưu trước/sau và event `incident.assigned` được
+lưu trong cùng transaction. Client tải lại incident sau `409 version_conflict`.
+
 `reported → assigned` qua `/assign` hoặc API nội bộ; `assigned → in_progress` qua `/acknowledge`, không gọi `/transitions`. `disposition` chỉ dùng khi incident chưa `closed`. Các timestamp cũ/history không bị xóa khi mở lại; lần mở lại không tự tạo SLA tiếp nhận mới. Ghi nhận xung đột đồng thời bằng version check trong câu lệnh cập nhật/transaction, không chỉ kiểm tra ở frontend.
 
 ## 5. Quản trị tối thiểu và theo dõi lỗi

@@ -64,3 +64,39 @@ $invalid = @{ event_id = 'd69996e8-ae76-44d4-a396-41694498feb3' } | ConvertTo-Js
 Hai dòng cuối phải lần lượt trả `200` và `422`. Workflow chỉ có Webhook Trigger nên gửi HTTP POST để kiểm tra; lệnh `n8n execute` không khởi chạy được workflow này. Nếu import một phiên bản mới, publish và restart lại n8n trước khi gọi URL production.
 
 Workflow nghiệp vụ thực tế (gọi lại backend `/internal/events/{id}/evaluate` và gửi email) sẽ được hoàn thiện theo lộ trình tích hợp W5-W8.
+
+---
+
+## 3. Workflow xử lý event có xác thực (`event-processor.json` — N5 W5)
+
+`event-processor.json` thay thế mock receiver ở các môi trường cần kiểm tra chữ ký thật:
+
+- **Webhook Receiver**: nhận `POST` tại path `events`, bật **Raw Body** để chữ ký HMAC khớp đúng bytes gốc.
+- **Verify Signature**: gọi `POST /internal/webhooks/verify` của backend với raw body và các header `X-CIM-Event-ID`, `X-CIM-Timestamp`, `X-CIM-Signature`.
+- **Signature Valid?**: chữ ký sai, timestamp quá hạn/tương lai hoặc event ID sai bị trả `401`/`422`, không gọi evaluate.
+- **Duplicate Check**: gọi `GET /internal/events/{event_id}`; event đã `done` được trả `200 duplicate` và bỏ qua evaluate.
+- **Evaluate Incident**: gọi `POST /internal/events/{event_id}/evaluate` với `run_id` lấy từ execution ID.
+- **Complete Event (Done/Failed)**: gọi `/internal/events/{event_id}/complete` để đóng event.
+- **Response**: luôn có `run_id`; response thành công có thêm `event_id`, `duplicate` và `evaluation`.
+
+### Cấu hình trước khi publish
+
+1. Trong n8n tạo **Header Auth** credential tên `CIM Internal Service Bearer`:
+   - Name: `Authorization`
+   - Value: `Bearer <CIM_INTERNAL_SERVICE_BEARER_TOKENS>`
+2. URL backend đã hardcode là `http://backend:8000` trong các node HTTP (n8n 2.x chặn
+   `$env` trong expression). Nếu n8n chạy ngoài Compose, sửa 5 URL này sang địa chỉ backend thật.
+3. Dùng cùng `CIM_WEBHOOK_HMAC_SECRET` với dispatcher backend; secret nằm ngoài Git.
+4. Publish workflow. Nếu mock receiver W2 vẫn dùng path `events`, tắt mock trước để tránh trùng webhook.
+
+### Gửi thử
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\send-signed-event.py `
+  --url http://localhost:5678/webhook/events `
+  --secret $env:CIM_WEBHOOK_HMAC_SECRET
+```
+
+Lệnh trên trả `status=processed` kèm `run_id`. Thêm `--timestamp-offset -301` để thấy nhánh `401 rejected`; gửi lại cùng `--event-id` sau khi event đã `done` để thấy nhánh `200 duplicate`.
+
+Acceptance test tự động của W5 nằm ở `backend/tests/test_automation_workflow.py` và không cần n8n đang chạy.

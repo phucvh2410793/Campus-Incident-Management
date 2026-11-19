@@ -1,18 +1,22 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr, Field
+from email_validator import EmailNotValidError, validate_email
+from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from app.auth.dependencies import (
-    bearer_scheme,
+    AuthenticatedSession,
+    get_authenticated_session,
     get_current_user,
     get_db,
 )
+from app.auth.errors import auth_request_id
 from app.auth.models import Session as UserSession
+from app.auth.rate_limit import login_limiter
 from app.auth.security import (
     create_session_token,
     hash_session_token,
@@ -29,8 +33,23 @@ SESSION_DURATION_HOURS = 8
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_login_email(cls, value: str) -> str:
+        local, separator, domain = value.rpartition("@")
+        is_demo_address = bool(separator) and domain.lower() == "demo.invalid"
+        # The demo seed uses .invalid, which the email validator normally rejects.
+        candidate = f"{local}@demo.example.com" if is_demo_address else value
+        try:
+            normalized = validate_email(candidate, check_deliverability=False).normalized
+        except EmailNotValidError as exc:
+            raise ValueError("Invalid email address") from exc
+        if is_demo_address:
+            return f"{normalized.rpartition('@')[0]}@demo.invalid"
+        return normalized
 
 
 class UserResponse(BaseModel):
@@ -60,12 +79,48 @@ def user_response(user: User) -> UserResponse:
     )
 
 
+def login_error(
+    code: str,
+    message: str,
+    request_id: str,
+    status_code: int,
+    extra_headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "details": [],
+                "request_id": request_id,
+            }
+        },
+        headers={"X-Request-ID": request_id, **(extra_headers or {})},
+    )
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(
     payload: LoginRequest,
     db: Annotated[DBSession, Depends(get_db)],
-):
+    request: Request,
+    response: Response,
+) -> LoginResponse | JSONResponse:
+    request_id = auth_request_id(request)
+    response.headers["X-Request-ID"] = request_id
     email = str(payload.email).lower()
+    ip_address = request.client.host if request.client else "unknown"
+
+    retry_after = login_limiter.retry_after(email, ip_address)
+    if retry_after is not None:
+        return login_error(
+            "rate_limited",
+            "Quá nhiều lần đăng nhập sai. Hãy thử lại sau.",
+            request_id,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            {"Retry-After": str(retry_after)},
+        )
 
     user = db.scalar(select(User).where(User.email == email))
 
@@ -77,12 +132,16 @@ def login(
             user.password_hash,
         )
     ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-            headers={"WWW-Authenticate": "Bearer"},
+        login_limiter.record_failure(email, ip_address)
+        return login_error(
+            "invalid_credentials",
+            "Email hoặc mật khẩu không đúng.",
+            request_id,
+            status.HTTP_401_UNAUTHORIZED,
+            {"WWW-Authenticate": "Bearer"},
         )
 
+    login_limiter.clear(email, ip_address)
     token = create_session_token()
     expires_at = datetime.now(UTC) + timedelta(hours=SESSION_DURATION_HOURS)
 
@@ -105,7 +164,10 @@ def login(
 @router.get("/me", response_model=UserResponse)
 def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
+    response: Response,
 ):
+    response.headers["X-Request-ID"] = auth_request_id(request)
     return user_response(current_user)
 
 
@@ -114,29 +176,12 @@ def get_me(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def logout(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    auth: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
     db: Annotated[DBSession, Depends(get_db)],
+    request: Request,
+    response: Response,
 ):
-    # Hash the supplied token before looking up its session.
-    token_hash = hash_session_token(credentials.credentials)
-
-    session = db.scalar(
-        select(UserSession).where(
-            UserSession.token_hash == token_hash,
-            UserSession.user_id == current_user.id,
-            UserSession.revoked_at.is_(None),
-        )
-    )
-
-    if session is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session not found or already revoked",
-        )
-
-    # Revoke the session so the token cannot be reused.
-    session.revoked_at = datetime.now(UTC)
+    auth.session.revoked_at = datetime.now(UTC)
     db.commit()
-
+    response.headers["X-Request-ID"] = auth_request_id(request)
     return None

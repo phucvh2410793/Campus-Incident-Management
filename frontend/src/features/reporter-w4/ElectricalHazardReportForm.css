@@ -1,0 +1,113 @@
+.n6-elec-page {
+  max-width: 940px;
+  margin: 0 auto;
+}
+
+.n6-elec-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.n6-elec-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.n6-elec-grid label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.n6-elec-grid input,
+.n6-elec-grid textarea,
+.n6-elec-grid select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--text-primary);
+  font: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.n6-elec-grid input:focus,
+.n6-elec-grid textarea:focus,
+.n6-elec-grid select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+
+.n6-elec-grid textarea {
+  resize: vertical;
+}
+
+.n6-elec-grid [aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
+.n6-form-wide {
+  grid-column: 1 / -1;
+}
+
+.n6-field-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Cảnh báo an toàn khẩn cấp điện */
+.n6-danger-note {
+  padding: 14px 16px;
+  border: 1.5px solid #dc2626;
+  border-left-width: 5px;
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: #991b1b;
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.n6-danger-note strong {
+  color: #7f1d1d;
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.n6-form-notice {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.n6-form-notice.success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.n6-form-notice.error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+}
+
+@media (max-width: 640px) {
+  .n6-elec-grid {
+    grid-template-columns: 1fr;
+  }
+  .n6-form-wide {
+    grid-column: auto;
+  }
+}

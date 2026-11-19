@@ -4,7 +4,7 @@ Campus Incident Management là dự án nhóm xây dựng nền tảng web tiế
 
 Tên đề tài trong proposal: **Campus Incident Management**. Chuyên ngành: **Cyber Security**, University of Science and Technology of Hanoi (USTH).
 
-> **Trạng thái hiện tại:** W2 đã có migration và seed cho tài khoản, incident, rule/SLA, workflow xử lý và outbox; frontend N6–N7 chạy với mock API; n8n có workflow nhận event giả lập. API nghiệp vụ incident/file và luồng thông báo thật sẽ được làm ở các tuần tiếp theo.
+> **Trạng thái hiện tại:** Đã hoàn thành phần việc W4 của N1–N7. Backend có xác thực bằng bearer token, API tạo incident với Idempotency-Key, phân loại/triage, phân công và outbox dispatcher. Frontend có form báo nguy hiểm điện và màn hình chi tiết/timeline; N6–N7 vẫn dùng mock API cho các endpoint chưa được tích hợp. API file và luồng thông báo thực tế sẽ được hoàn thiện ở các tuần tiếp theo.
 
 ## Tài liệu dự án
 
@@ -199,7 +199,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-docker.ps1
 | Database readiness | http://localhost:8000/api/v1/health/ready |
 | n8n | http://localhost:5678 |
 
-PostgreSQL được truy cập trên máy qua `localhost:15432`; cổng trong mạng Docker vẫn là `5432`. Có thể đổi cổng máy qua `POSTGRES_PORT` trong `.env`. Compose tự chạy migration trước backend. Truy cập n8n lần đầu để tạo owner account. Tài khoản demo N1 được tạo bằng lệnh seed riêng trong [hướng dẫn phát triển](docs/development.md#seed-tài-khoản-demo-n1); frontend W2 dùng mock API, chưa nối luồng incident thật.
+PostgreSQL được truy cập trên máy qua `localhost:15432`; cổng trong mạng Docker vẫn là `5432`. Có thể đổi cổng máy qua `POSTGRES_PORT` trong `.env`. Compose tự chạy migration trước backend. Truy cập n8n lần đầu để tạo owner account. Tài khoản demo N1 được tạo bằng lệnh seed riêng trong [hướng dẫn phát triển](docs/development.md#seed-tài-khoản-demo-n1); các màn hình N6–N7 vẫn dùng mock API cho các luồng chưa nối backend thật.
 
 Migration N2-W2 chạy sau identity/session. Có thể seed 30 incident giả để thử phân trang sau khi đã tạo reporter demo; xem [mô hình dữ liệu và cách seed](docs/incident-data-model.md#migration-và-seed-w2).
 

@@ -9,6 +9,7 @@ export interface StaffFiltersState {
   category: string
   department_id: string
   sla_state: 'overdue' | 'warning' | 'safe' | 'met' | ''
+  triage: 'true' | 'false' | ''
 }
 
 interface StaffFilterBarProps {
@@ -51,6 +52,12 @@ const slaOptions: { value: StaffFiltersState['sla_state']; label: string }[] = [
   { value: 'met', label: '✅ Đã tiếp nhận đúng hạn' },
 ]
 
+const triageOptions = [
+  { value: '', label: 'Tất cả phân loại' },
+  { value: 'true', label: '⏳ Cần phân loại (Triage)' },
+  { value: 'false', label: '✅ Đã phân loại' },
+]
+
 export function StaffFilterBar({
   currentUser,
   filters,
@@ -69,6 +76,7 @@ export function StaffFilterBar({
     filters.priority ||
     filters.category ||
     filters.sla_state ||
+    filters.triage ||
     (isAdmin && filters.department_id)
   )
 
@@ -158,6 +166,21 @@ export function StaffFilterBar({
           </select>
         </div>
 
+        {/* Triage Filter Dropdown */}
+        <div className="filter-item">
+          <select
+            className="input-select filter-select"
+            value={filters.triage}
+            onChange={(e) => onFilterChange('triage', e.target.value as 'true' | 'false' | '')}
+          >
+            {triageOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Department Dropdown (Admin selectable, Manager/Handler locked) */}
         {isAdmin && (
           <div className="filter-item">
@@ -236,6 +259,12 @@ export function StaffFilterBar({
               <span className="active-chip">
                 SLA: {slaOptions.find((o) => o.value === filters.sla_state)?.label}
                 <button type="button" onClick={() => onFilterChange('sla_state', '')}>✕</button>
+              </span>
+            )}
+            {filters.triage && (
+              <span className="active-chip">
+                Phân loại: {triageOptions.find((o) => o.value === filters.triage)?.label}
+                <button type="button" onClick={() => onFilterChange('triage', '')}>✕</button>
               </span>
             )}
             {isAdmin && filters.department_id && (

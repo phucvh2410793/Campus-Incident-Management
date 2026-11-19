@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import type { UserSummary } from '../../types/auth.ts'
+import type { IncidentResponse } from '../../types/incident.ts'
 import { DEPARTMENTS } from '../../mocks/mock-users.ts'
-import { N7_ROLE_PERMISSIONS } from '../../mocks/n7-role-mock-api.ts'
+import { N7_ROLE_PERMISSIONS, mockN7StaffRoleApi } from '../../mocks/n7-role-mock-api.ts'
 
 interface StaffRoleNavProps {
   currentUser: UserSummary
@@ -10,6 +12,8 @@ interface StaffRoleNavProps {
   onResetData: () => void
   viewMode: 'interactive' | 'wireframe'
   onToggleViewMode: (mode: 'interactive' | 'wireframe') => void
+  incidents?: IncidentResponse[]
+  onSelectIncident?: (incident: IncidentResponse) => void
 }
 
 const roleBadgeLabels: Record<string, { label: string; className: string }> = {
@@ -27,7 +31,10 @@ export function StaffRoleNav({
   onResetData,
   viewMode,
   onToggleViewMode,
+  incidents = [],
+  onSelectIncident,
 }: StaffRoleNavProps) {
+  const [showNotif, setShowNotif] = useState(false)
   const roleBadge = roleBadgeLabels[currentUser.role] || { label: currentUser.role, className: '' }
   const perms = N7_ROLE_PERMISSIONS[currentUser.role as keyof typeof N7_ROLE_PERMISSIONS]
   const deptName = currentUser.role === 'administrator'
@@ -35,6 +42,12 @@ export function StaffRoleNav({
     : currentUser.department_id
     ? DEPARTMENTS[currentUser.department_id]?.name || currentUser.department_id
     : 'Chưa chỉ định bộ phận'
+
+  // Các sự cố cần chú ý: P1, Quá hạn SLA, Cần triage
+  const urgentIncidents = incidents.filter((i) => {
+    const slaState = mockN7StaffRoleApi.getSlaStatus(i).state
+    return i.priority === 'p1' || slaState === 'overdue' || slaState === 'warning' || i.triage_required
+  })
 
   return (
     <div className="staff-role-nav-container">
@@ -77,6 +90,59 @@ export function StaffRoleNav({
             >
               📐 Bản Vẽ Wireframe W1
             </button>
+          </div>
+
+          {/* Chuông thông báo sự cố tương tác thực tế */}
+          <div className="sf-notif-wrapper">
+            <button
+              type="button"
+              className="sf-notif-btn"
+              onClick={() => setShowNotif((v) => !v)}
+              aria-label="Thông báo sự cố khẩn cấp"
+              title="Xem thông báo sự cố P1, quá hạn SLA và cần triage"
+            >
+              🔔
+              {urgentIncidents.length > 0 && (
+                <span className="sf-notif-badge">{urgentIncidents.length}</span>
+              )}
+            </button>
+
+            {showNotif && (
+              <div className="sf-notification-popover">
+                <div className="sf-notif-header">
+                  <span className="sf-notif-title">🔔 Sự Cố Cần Xử Lý Ngay</span>
+                  <span className="sf-notif-count">{urgentIncidents.length} cảnh báo</span>
+                </div>
+                <div className="sf-notif-list">
+                  {urgentIncidents.length === 0 ? (
+                    <div className="sf-notif-empty">Hiện không có sự cố nào bị quá hạn hoặc khẩn cấp!</div>
+                  ) : (
+                    urgentIncidents.slice(0, 6).map((inc) => (
+                      <div
+                        key={inc.id}
+                        className="sf-notif-item"
+                        onClick={() => {
+                          setShowNotif(false)
+                          onSelectIncident?.(inc)
+                        }}
+                      >
+                        <div className="sf-notif-item-top">
+                          <span className={`sf-notif-prio sf-prio-${inc.priority || 'none'}`}>
+                            {inc.priority ? inc.priority.toUpperCase() : 'TRIAGE'}
+                          </span>
+                          <span className="sf-notif-id">#{inc.id.substring(0, 8)}</span>
+                        </div>
+                        <div className="sf-notif-item-title">{inc.title}</div>
+                        <div className="sf-notif-item-footer">
+                          <span>{inc.building || 'Khuôn viên'}</span>
+                          <span className="sf-notif-action-hint">Xem chi tiết →</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
         </div>

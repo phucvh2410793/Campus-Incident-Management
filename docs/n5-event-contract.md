@@ -1,6 +1,6 @@
 # N5 — Event contract, outbox và webhook
 
-`backend/app/automation` chứa event schema, chữ ký HMAC, `EventPublisher`, mô hình bảng Outbox/Notification, repository và worker stub.
+`backend/app/automation` chứa event schema, chữ ký HMAC, `EventPublisher`, mô hình bảng Outbox/Notification, repository, dispatcher webhook và worker outbox.
 JSON mẫu nằm ở `workflows/events`. N2, N3 và N4 phát event qua
 `EventPublisher`; N5 xử lý phần lưu trữ outbox, claim lease, retry và gửi event sang n8n.
 
@@ -59,16 +59,67 @@ publisher.create_and_publish(
 session.commit()
 ```
 
-## 4. Cơ chế Claim Lease, Retry và Backoff (W2)
+## 4. Cơ chế Claim Lease, Retry và Backoff (W2) và Dispatcher thật (W4)
 
-Worker (`OutboxWorkerStub`) thực hiện chu kỳ xử lý:
+Worker (`OutboxWorkerStub`, tên giữ để tương thích import) thực hiện chu kỳ xử lý:
 1. **Claim lease**: Lấy các bản ghi `status == 'pending'` (đến hạn `next_attempt_at`) hoặc `status == 'processing'` nhưng `lease_expires_at <= now` (worker trước bị crash hoặc quá hạn lease). Sử dụng `SELECT ... FOR UPDATE SKIP LOCKED` trên PostgreSQL.
 2. **Gán lease**: Cập nhật `status = 'processing'`, `lease_token = <worker_id>`, `lease_expires_at = now + lease_duration`, tăng `attempt_count`.
-3. **Dispatch**: Chuyển payload sang webhook n8n kèm chữ ký HMAC.
+3. **Dispatch**: `WebhookDispatcher` POST envelope đã ký HMAC sang webhook n8n. Mỗi event có transaction riêng nên một event lỗi không kéo theo event khác.
 4. **Complete hoặc Retry**:
-   - Thành công: Đánh dấu `status = 'done'`, xóa lease.
-   - Thất bại: Nếu `attempt_count < max_attempts`, chuyển về `pending` với exponential backoff (`next_attempt_at = now + base * 2^(attempt-1)`). Khi vượt quá số lần thử, chuyển thành `failed` (dead-letter).
-   - Admin retry: Endpoint `/admin/events/{id}/retry` cho phép phục hồi bản ghi `failed` về `pending` kèm lý do.
+   - `2xx`: n8n đã nhận event. Worker đánh dấu `status = 'done'`, xóa lease. Nếu n8n đã gọi `/internal/events/{id}/complete` trước đó thì worker nhận biết và không tính trùng.
+   - `408`, `425`, `429`, `5xx`, lỗi mạng/timeout: retryable. Nếu `attempt_count < max_attempts`, chuyển về `pending` với exponential backoff (`next_attempt_at = now + base * 2^(attempt-1)`), chặn trần bằng `max_backoff_seconds`. Khi vượt quá số lần thử, chuyển thành `failed` (dead-letter).
+   - `4xx` còn lại (ví dụ `400`, `422`): lỗi vĩnh viễn, chuyển thẳng `failed` để không đốt hết số lần thử.
+   - Admin retry: `retry_dead_letter(event_id, reason)` đưa bản ghi `failed` về `pending`, giữ lý do trong `error_message`.
+5. **Phục hồi sau restart**: `recover_interrupted_events()` đưa các event `processing` có lease đã hết hạn về `pending` với `next_attempt_at = now`. Event đang có lease còn hiệu lực không bị lấy lại, nên hai worker chạy song song không dispatch trùng.
+6. **Vòng lặp**: `run_forever()` bắt lỗi từng chu kỳ và tiếp tục poll; `SIGINT`/`SIGTERM` dừng sau chu kỳ hiện tại.
+
+Thông điệp lỗi được rút gọn còn 1000 ký tự và che secret cấu hình trước khi ghi `error_message`; URL có credential bị thay bằng `scheme://host/***`.
+
+Bảo đảm giao nhận là **at-least-once**: n8n và backend phải idempotent theo `event_id`. HTTP 2xx chỉ nghĩa là n8n đã nhận event.
+
+### Cấu hình dispatcher
+
+Bí mật và URL nằm ngoài Git:
+
+| Biến | Ý nghĩa | Mặc định local |
+| --- | --- | --- |
+| `CIM_OUTBOX_WEBHOOK_URL` hoặc `N8N_WEBHOOK_URL` | URL webhook n8n | `http://localhost:5678/webhook/events` |
+| `CIM_WEBHOOK_HMAC_SECRET` | Secret ký HMAC | placeholder dev (không dùng ngoài local) |
+| `CIM_OUTBOX_POLL_INTERVAL_SECONDS` | Chu kỳ poll | `5` |
+| `CIM_OUTBOX_BATCH_SIZE` | Số event mỗi lượt claim | `10` |
+| `CIM_OUTBOX_LEASE_SECONDS` | Thời hạn lease | `60` |
+| `CIM_OUTBOX_BACKOFF_BASE_SECONDS` | Cơ sở backoff | `5` |
+| `CIM_OUTBOX_BACKOFF_MAX_SECONDS` | Trần backoff | `300` |
+| `CIM_OUTBOX_WEBHOOK_TIMEOUT_SECONDS` | Timeout HTTP | `10` |
+| `CIM_OUTBOX_WORKER_ID` | ID worker (mặc định sinh ngẫu nhiên) | — |
+| `CIM_OUTBOX_DISPATCH_ENABLED` | Bật/tắt dispatcher | `true` |
+
+Các biến trên đọc trực tiếp từ môi trường hoặc file `.env` (đã bị Git bỏ qua). Không commit secret thật; thêm biến vào `.env` local của bạn. Khi dispatcher chạy trong Compose, đặt `N8N_WEBHOOK_URL=http://n8n:5678/webhook/events`.
+
+### Chạy dispatcher
+
+Từ `backend/` (sau khi migration đã chạy):
+
+```powershell
+# Xử lý một lượt rồi thoát (phù hợp test/CI)
+.venv/Scripts/python.exe -m app.automation.run_worker --once
+
+# Đưa event có lease hết hạn về pending, rồi thoát
+.venv/Scripts/python.exe -m app.automation.run_worker --recover
+
+# Chạy liên tục đến khi Ctrl+C/SIGTERM
+.venv/Scripts/python.exe -m app.automation.run_worker
+```
+
+Trong Compose, dùng cùng image backend:
+
+```powershell
+docker compose run --rm -e N8N_WEBHOOK_URL=http://n8n:5678/webhook/events backend python -m app.automation.run_worker
+```
+
+Worker khởi động lại (restart, deploy, crash) không mất event vì trạng thái nằm trong PostgreSQL; chỉ các lease đã hết hạn được thu hồi, còn lại chờ hết hạn tự nhiên. `run_forever()` gọi `recover_interrupted_events()` ngay khi khởi động (tắt bằng `requeue_on_start=False` nếu cần kiểm soát thủ công).
+
+Nếu chưa từng chạy migration hoặc PostgreSQL chưa lên, CLI trả mã thoát `1` và log lỗi kết nối thay vì crash im lặng.
 
 ## 5. Idempotency Khóa Thông Báo (`notifications`) (W2)
 
@@ -83,8 +134,93 @@ Bảng `notifications` bảo vệ chống gửi email trùng lặp:
 
 Nằm tại `workflows/mock-event-receiver.json`, tiếp nhận webhook POST, kiểm tra envelope, và trả về HTTP 200 xác nhận kèm `run_id` giả lập.
 
-## 7. Fixture và kiểm thử
+## 7. Service Bearer Authentication `/internal/*` (W3)
+
+Để n8n gọi ngược lại backend thực hiện các thao tác xử lý nghiệp vụ (`/internal/*`) mà không dùng token người dùng:
+- n8n sử dụng **Service Bearer Token** riêng biệt (`Authorization: Bearer <service_token>`).
+- Cấu hình bí mật ngoài Git: `CIM_INTERNAL_SERVICE_BEARER_TOKENS` (danh sách token) hoặc `CIM_INTERNAL_SERVICE_TOKEN_HASHES` (danh sách hash SHA-256).
+- **Lưu hash token và hỗ trợ xoay vòng (rotation):** Backend không lưu token thô trong bộ nhớ/DB mà chỉ lưu hash SHA-256, so sánh hằng định thời gian (`hmac.compare_digest`). Trong quá trình xoay vòng token, nhiều token hash có thể cùng active để không làm gián đoạn request đang xử lý.
+- **Từ chối User Token:** Token người dùng (session của reporter, handler, manager, admin) tuyệt đối không được phép gọi các endpoint `/internal/*`. Khi phát hiện token người dùng, hệ thống từ chối với HTTP 403 Forbidden (`User tokens are not permitted to access internal endpoints`).
+- **Danh sách endpoint `/internal/*`:**
+  - `GET /internal/events/{event_id}`: Metadata tối thiểu cho event, không lộ mô tả/file/secret.
+  - `POST /internal/events/{event_id}/evaluate`: Đánh giá sự cố theo rule, idempotent.
+  - `POST /internal/events/{event_id}/complete`: Đánh dấu `done` hoặc `failed`, chặn chuyển trạng thái sai `done → failed`.
+  - `POST /internal/notifications/claim`: Đăng ký claim gửi thông báo với khóa duy nhất `(event_id, kind, recipient_user_id)`.
+  - `POST /internal/notifications/{id}/complete`: Ghi nhận trạng thái gửi `sent`, `failed` hoặc `uncertain`.
+  - `POST /internal/sla/check`: Kiểm tra SLA định kỳ cho job n8n.
+  - `POST /internal/webhooks/verify`: Endpoint xác thực webhook inbound bằng chữ ký HMAC và timestamp.
+
+## 8. HMAC Timestamp & Event ID ngoài Git (W3)
+
+- Bí mật HMAC được nạp từ biến môi trường ngoài Git (`CIM_WEBHOOK_HMAC_SECRET` hoặc `WEBHOOK_HMAC_SECRET`).
+- Hỗ trợ xoay vòng bí mật (`CIM_WEBHOOK_HMAC_SECRETS_ROTATION`).
+- `verify_webhook_request()` và dependency `require_valid_webhook_signature`:
+  - Từ chối chữ ký sai (`invalid_signature` -> 401).
+  - Từ chối timestamp quá hạn lệch quá 300 giây về quá khứ (`expired_timestamp` -> 401) hoặc tương lai (`future_timestamp` -> 401).
+  - Kiểm tra định dạng UUID của `X-CIM-Event-ID` (`invalid_event_id` -> 422).
+  - Kiểm tra đầy đủ header bắt buộc (`missing_headers` -> 400).
+
+## 9. Fixture và kiểm thử
 
 - Fixture JSON: `workflows/events/`
-- Test hợp đồng và signature: `backend/tests/test_automation_events.py`
-- Test outbox claim, retry và notification: `backend/tests/test_outbox_repository.py`
+- Test hợp đồng và signature W1: `backend/tests/test_automation_events.py`
+- Test outbox claim, retry và notification W2: `backend/tests/test_outbox_repository.py`
+- Test service bearer auth, user token rejection, rotation và HMAC W3: `backend/tests/test_automation_service_bearer.py`
+- Test dispatcher ký HMAC, backoff, dead-letter, n8n down và phục hồi sau restart W4: `backend/tests/test_automation_dispatcher.py`
+- Test workflow W5 (chữ ký giả, timestamp quá hạn/tương lai, event trùng, run ID): `backend/tests/test_automation_workflow.py`
+
+## 10. Workflow webhook xử lý event (W5)
+
+`workflows/event-processor.json` là workflow n8n thật thay cho mock receiver W2:
+
+1. `Webhook Receiver` nhận `POST` tại path `events` và bật **Raw Body** để giữ nguyên
+   bytes phục vụ kiểm chữ ký.
+2. `Verify Signature` gọi `POST /internal/webhooks/verify` với raw body và ba header
+   `X-CIM-*`, dùng Header Auth credential `CIM Internal Service Bearer`.
+3. `Signature Valid?` chỉ cho đi tiếp khi response có `status="verified"`. Chữ ký sai,
+   body bị sửa, timestamp quá hạn/tương lai hoặc event ID sai bị trả `401`/`422`
+   tại `Respond Rejected`; outbox không bị thay đổi và không gọi evaluate.
+4. `Duplicate Check` gọi `GET /internal/events/{event_id}`. Nếu event đã `done`,
+   `Respond Duplicate` trả `200` với `duplicate=true` và bỏ qua evaluate lần hai.
+5. `Evaluate Incident` gọi `POST /internal/events/{event_id}/evaluate` với
+   `run_id = $execution.id`. Backend không tin `priority`, `department_id` hay
+   `reporter_id` từ body; kết quả evaluate là idempotent theo `event_id`.
+6. `Complete Event (Done)` hoặc `Complete Event (Failed)` gọi
+   `POST /internal/events/{event_id}/complete` để đóng vòng đời event.
+7. Mọi response đều có `run_id` (lấy từ execution ID của n8n); response xử lý thành
+   công còn có `event_id`, `duplicate` và object `evaluation`.
+
+### Cấu hình workflow
+
+| Thành phần | Giá trị |
+| --- | --- |
+| Backend URL trong n8n | `http://backend:8000` (hardcode trong 5 node HTTP; sửa nếu n8n chạy ngoài Compose) |
+| Credential gọi `/internal/*` | Header Auth tên `CIM Internal Service Bearer`, header `Authorization`, giá trị `Bearer <service token>` |
+| Webhook secret | `CIM_WEBHOOK_HMAC_SECRET` (hoặc rotation) ngoài Git, dùng chung với dispatcher |
+| Webhook path | `events` (`http://localhost:5678/webhook/events` khi chạy Compose) |
+
+Workflow không nhúng token hay HMAC secret vào JSON; chỉ chứa tham chiếu credential và
+expression `$execution.id`. Khi import, tạo credential trước, sau đó publish workflow.
+Nếu vẫn giữ `mock-event-receiver.json` ở cùng path `events`, phải tắt một trong hai
+workflow để tránh trùng webhook.
+
+### Hành vi theo tiêu chí W5
+
+| Ca | Kết quả |
+| --- | --- |
+| Event hợp lệ | `200 processed`, có `run_id`, event chuyển `done` |
+| Event giả / body bị sửa | `401 rejected`, outbox vẫn `pending`, không evaluate |
+| Timestamp quá hạn hoặc ở tương lai | `401 rejected`, không evaluate |
+| Event trùng đã `done` | `200 duplicate`, không evaluate lại, vẫn có `run_id` |
+| Evaluate lỗi | gọi complete `failed`, trả `502` kèm `run_id` để truy vết |
+
+Gửi thử một event đã ký từ máy local:
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\send-signed-event.py `
+  --url http://localhost:5678/webhook/events `
+  --secret $env:CIM_WEBHOOK_HMAC_SECRET
+```
+
+Thêm `--timestamp-offset -301` để kiểm tra nhánh từ chối event quá hạn. Chạy lại cùng
+`--event-id` sau khi event đã `done` để kiểm tra nhánh duplicate.

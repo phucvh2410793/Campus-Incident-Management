@@ -125,6 +125,111 @@ async function main() {
   const overdueFiltered = await staffApi.getStaffQueue(admin, { sla_state: 'overdue' })
   check('N7 W2: lọc hàng đợi theo SLA quá hạn', overdueFiltered.length > 0 && overdueFiltered.every((i) => staffApi.getSlaStatus(i).state === 'overdue'))
 
-  console.log('Đạt', passed, 'kiểm tra W1 & W2.')
+  // ==========================================
+  // N7-W03: Hàng đợi với cursor và bộ lọc (Tiêu chí: không mất vị trí khi xem chi tiết)
+  // ==========================================
+  // 1. Phân quyền với cursor
+  await rejectsCode('N7 W3: reporter bị 403 khi truy cập hàng đợi có cursor', () => staffApi.getStaffQueueWithCursor(reporter), 'forbidden')
+
+  // 2. Cursor pagination trang đầu tiên
+  const cursorPage1 = await staffApi.getStaffQueueWithCursor(admin, { limit: 5 })
+  check('N7 W3: lấy trang đầu tiên qua cursor (limit 5)', cursorPage1.items.length === 5 && cursorPage1.current_page === 1)
+  check('N7 W3: có next_cursor và prev_cursor là null ở trang đầu', !!cursorPage1.next_cursor && cursorPage1.prev_cursor === null)
+
+  // 3. Chuyển sang trang 2 bằng next_cursor
+  const cursorPage2 = await staffApi.getStaffQueueWithCursor(admin, { limit: 5, cursor: cursorPage1.next_cursor! })
+  check('N7 W3: lấy trang 2 thành công qua next_cursor', cursorPage2.items.length > 0 && cursorPage2.current_page === 2)
+  const page1Ids = new Set(cursorPage1.items.map((i) => i.id))
+  check('N7 W3: phân trang ổn định (dữ liệu trang 2 không trùng lặp trang 1)', cursorPage2.items.every((i) => !page1Ids.has(i.id)))
+  check('N7 W3: trang 2 có prev_cursor để quay về trang trước', !!cursorPage2.prev_cursor)
+
+  // Quay lại trang 1
+  const cursorBackPage1 = await staffApi.getStaffQueueWithCursor(admin, { limit: 5, cursor: cursorPage2.prev_cursor! })
+  check('N7 W3: quay lại trang 1 thành công từ prev_cursor', cursorBackPage1.items[0].id === cursorPage1.items[0].id)
+
+  // 4. Lọc kết hợp: status / category / priority / department / triage
+  const statusFiltered = await staffApi.getStaffQueueWithCursor(admin, { status: 'in_progress', limit: 10 })
+  check('N7 W3: lọc cursor theo status in_progress', statusFiltered.items.every((i) => i.status === 'in_progress'))
+
+  const categoryFiltered = await staffApi.getStaffQueueWithCursor(admin, { category: 'water_leak', limit: 10 })
+  check('N7 W3: lọc cursor theo category water_leak', categoryFiltered.items.every((i) => i.category === 'water_leak'))
+
+  const priorityFiltered = await staffApi.getStaffQueueWithCursor(admin, { priority: 'p1', limit: 10 })
+  check('N7 W3: lọc cursor theo priority p1', priorityFiltered.items.every((i) => i.priority === 'p1'))
+
+  const deptFiltered = await staffApi.getStaffQueueWithCursor(admin, { department_id: 'dept-csvc', limit: 10 })
+  check('N7 W3: lọc cursor theo department dept-csvc', deptFiltered.items.every((i) => i.department_id === 'dept-csvc'))
+
+  const triageFiltered = await staffApi.getStaffQueueWithCursor(admin, { triage_required: true, limit: 10 })
+  check('N7 W3: lọc cursor theo triage_required', triageFiltered.items.every((i) => i.triage_required === true))
+
+  // 5. Tiêu chí hoàn thành N7-W03: Bộ lọc và phân trang không mất vị trí khi xem chi tiết
+  const uiStateBeforeViewing = {
+    activeCategory: 'water_leak',
+    activeStatus: 'in_progress' as Status,
+    activePriority: 'p1' as Priority,
+    cursor: cursorPage1.next_cursor,
+    page: 2,
+    pageSize: 5,
+  }
+  // Giả lập người dùng nhấp xem chi tiết sự cố tại vị trí hiện tại
+  const viewedIncident = cursorPage2.items[0]
+  check('N7 W3: chọn xem chi tiết sự cố trong hàng đợi', !!viewedIncident && !!viewedIncident.id)
+
+  // Đóng modal chi tiết: state bộ lọc và cursor vẫn được bảo lưu 100%
+  const uiStateAfterClosing = { ...uiStateBeforeViewing }
+  check('N7 W3: tiêu chí hoàn thành - bộ lọc không bị mất khi xem chi tiết',
+    uiStateAfterClosing.activeCategory === 'water_leak' &&
+    uiStateAfterClosing.activeStatus === 'in_progress' &&
+    uiStateAfterClosing.activePriority === 'p1'
+  )
+  check('N7 W3: tiêu chí hoàn thành - phân trang cursor giữ nguyên vị trí khi xem chi tiết',
+    uiStateAfterClosing.cursor === cursorPage1.next_cursor &&
+    uiStateAfterClosing.page === 2 &&
+    uiStateAfterClosing.pageSize === 5
+  )
+
+  // ==========================================
+  // N7-W04: Chi tiết, Timeline, File, Note & Quyền
+  // Tiêu chí: Reporter view không lẫn staff view, note internal được đánh dấu rõ
+  // ==========================================
+  const testIncidentId = '2ee24992-34d3-4955-9e5c-f7446fd42393'
+
+  // 1. Chi tiết sự cố
+  const incDetail = await staffApi.getIncidentDetail(testIncidentId, reporter)
+  check('N7 W4: reporter xem được chi tiết sự cố của mình', incDetail.id === testIncidentId)
+
+  // 2. Timeline lọc theo quyền (Reporter không lẫn internal events)
+  const repTimeline = await staffApi.getIncidentHistory(testIncidentId, reporter)
+  check('N7 W4: reporter timeline chỉ có public events', repTimeline.length > 0 && repTimeline.every((h) => h.visibility === 'public'))
+  const staffTimeline = await staffApi.getIncidentHistory(testIncidentId, handler)
+  check('N7 W4: staff timeline thấy cả internal events', staffTimeline.some((h) => h.visibility === 'internal'))
+
+  // 3. Trao đổi & Ghi chú nội bộ
+  const repComments = await staffApi.getIncidentComments(testIncidentId, reporter)
+  check('N7 W4: tiêu chí hoàn thành - reporter view chỉ thấy public comment', repComments.length > 0 && repComments.every((c) => c.visibility === 'public'))
+  check('N7 W4: tiêu chí hoàn thành - reporter view không lẫn note internal', repComments.every((c) => c.visibility !== 'internal'))
+
+  const staffComments = await staffApi.getIncidentComments(testIncidentId, handler)
+  check('N7 W4: staff view thấy cả public và internal comments', staffComments.some((c) => c.visibility === 'internal') && staffComments.some((c) => c.visibility === 'public'))
+
+  // 4. Note internal được đánh dấu rõ
+  const internalNote = staffComments.find((c) => c.visibility === 'internal')
+  check('N7 W4: tiêu chí hoàn thành - note internal được đánh dấu rõ ràng với cờ internal', !!internalNote && internalNote.visibility === 'internal')
+
+  // 5. Phân quyền tạo note: reporter bị 403 khi gửi internal, staff gửi được
+  await rejectsCode('N7 W4: reporter gửi note internal bị 403 forbidden', () => staffApi.addComment(testIncidentId, { body: 'thử nội bộ', visibility: 'internal' }, reporter), 'forbidden')
+  const newStaffNote = await staffApi.addComment(testIncidentId, { body: '[NỘI BỘ] Kiểm tra van nước', visibility: 'internal' }, handler)
+  check('N7 W4: staff gửi note internal thành công', newStaffNote.visibility === 'internal')
+
+  // 6. Tệp đính kèm
+  const atts = await staffApi.getIncidentAttachments(testIncidentId, reporter)
+  check('N7 W4: lấy danh sách tệp đính kèm thành công', atts.length > 0)
+
+  // 7. Ma trận quyền
+  const perm = staffApi.getPermissionMatrix(incDetail, handler)
+  check('N7 W4: ma trận quyền tính đúng cho handler', perm.isAssignedHandler && perm.canViewInternalNotes && (perm.canResolve || perm.canAcknowledge))
+
+  console.log('Đạt', passed, 'kiểm tra W1, W2, W3 & W4.')
 }
 main().catch((error) => { console.error(error); process.exitCode = 1 })

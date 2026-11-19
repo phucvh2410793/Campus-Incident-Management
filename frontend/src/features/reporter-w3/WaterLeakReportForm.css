@@ -1,0 +1,13 @@
+.n6-water-page { max-width: 940px; margin: 0 auto; }
+.n6-water-form { display: grid; gap: 16px; margin-top: 24px; }
+.n6-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.n6-form-grid label { display: grid; align-content: start; gap: 6px; font-weight: 650; }
+.n6-form-grid input, .n6-form-grid textarea, .n6-form-grid select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: #fff; color: var(--text-primary); font: inherit; }
+.n6-form-grid textarea { resize: vertical; }
+.n6-form-grid [aria-invalid="true"] { border-color: #dc2626; }
+.n6-form-wide { grid-column: 1 / -1; }
+.n6-field-error { margin: 0; color: #b91c1c; font-size: .85rem; font-weight: 500; }
+.n6-safety-note { padding: 12px 14px; border: 1px solid #f59e0b; border-radius: var(--radius-sm); background: #fffbeb; color: #78350f; line-height: 1.5; }
+.n6-form-notice.success { color: #166534; }
+.n6-form-notice.error { color: #b91c1c; }
+@media (max-width: 640px) { .n6-form-grid { grid-template-columns: 1fr; } .n6-form-wide { grid-column: auto; } }
