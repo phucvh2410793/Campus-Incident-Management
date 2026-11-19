@@ -3,6 +3,7 @@ import type { IncidentResponse, HistoryItem, Comment, AttachmentSummary } from '
 import type { UserSummary } from '../../types/auth.ts'
 import { DEPARTMENTS, MOCK_USERS } from '../../mocks/mock-users.ts'
 import { mockN7StaffRoleApi, type PermissionStatus } from '../../mocks/n7-role-mock-api.ts'
+import { staffApiAdapter } from '../../api/staff-api-adapter.ts'
 import { StaffWorkflowActions } from './StaffWorkflowActions.tsx'
 
 interface StaffIncidentDetailModalProps {
@@ -73,7 +74,7 @@ export function StaffIncidentDetailModal({
 
   const handleReloadIncident = async (): Promise<IncidentResponse> => {
     if (!incident) throw new Error('Không có sự cố.')
-    const fresh = await mockN7StaffRoleApi.getIncidentDetail(incident.id, effectiveUser)
+    const fresh = await staffApiAdapter.getIncidentDetail(incident.id, effectiveUser)
     setCurrentIncident(fresh)
     setRefreshKey((k) => k + 1)
     onIncidentUpdated?.(fresh)
@@ -126,16 +127,16 @@ export function StaffIncidentDetailModal({
 
       try {
         const [hist, cmts, atts] = await Promise.all([
-          mockN7StaffRoleApi.getIncidentHistory(incident.id, actorForView),
-          mockN7StaffRoleApi.getIncidentComments(incident.id, actorForView),
-          mockN7StaffRoleApi.getIncidentAttachments(incident.id, actorForView),
+          staffApiAdapter.getHistory(incident.id, actorForView),
+          staffApiAdapter.getComments(incident.id, actorForView),
+          staffApiAdapter.getAttachments(incident.id, actorForView),
         ])
 
         if (!isMounted) return
         setTimeline(hist)
         setComments(cmts)
         setAttachments(atts)
-        setPermissions(mockN7StaffRoleApi.getPermissionMatrix(incident, actorForView))
+        setPermissions(staffApiAdapter.getPermissionMatrix(incident, actorForView))
       } catch {
         // Fallback an toàn nếu lỗi
       }
@@ -181,7 +182,7 @@ export function StaffIncidentDetailModal({
         : effectiveUser
 
     try {
-      await mockN7StaffRoleApi.addComment(
+      await staffApiAdapter.addComment(
         incident.id,
         {
           body: newCommentBody.trim(),

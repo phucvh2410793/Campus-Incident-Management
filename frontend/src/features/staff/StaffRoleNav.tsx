@@ -10,8 +10,8 @@ interface StaffRoleNavProps {
   onToggleSimulatedError: () => void
   onRefresh: () => void
   onResetData: () => void
-  viewMode: 'interactive' | 'wireframe'
-  onToggleViewMode: (mode: 'interactive' | 'wireframe') => void
+  viewMode: 'interactive' | 'wireframe' | 'dashboard'
+  onToggleViewMode: (mode: 'interactive' | 'wireframe' | 'dashboard') => void
   incidents?: IncidentResponse[]
   onSelectIncident?: (incident: IncidentResponse) => void
 }
@@ -76,11 +76,19 @@ export function StaffRoleNav({
           <div className="view-mode-toggle" role="tablist">
             <button
               type="button"
+              className={`mode-btn ${viewMode === 'dashboard' ? 'active' : ''}`}
+              onClick={() => onToggleViewMode('dashboard')}
+              title="Dashboard chỉ số, quá hạn SLA và lỗi automation (N7-W07)"
+            >
+              📊 Dashboard W7
+            </button>
+            <button
+              type="button"
               className={`mode-btn ${viewMode === 'interactive' ? 'active' : ''}`}
               onClick={() => onToggleViewMode('interactive')}
-              title="Bảng vận hành W2 trực quan kết nối Mock API"
+              title="Bảng vận hành hàng đợi xử lý"
             >
-              🚀 Bảng Vận Hành W2
+              🚀 Hàng Đợi Xử Lý
             </button>
             <button
               type="button"

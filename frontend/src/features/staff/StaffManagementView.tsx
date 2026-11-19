@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { UserSummary } from '../../types/auth.ts'
 import type { IncidentResponse } from '../../types/incident.ts'
 import { mockN7StaffRoleApi } from '../../mocks/n7-role-mock-api.ts'
+import { staffApiAdapter } from '../../api/staff-api-adapter.ts'
 
 import { StaffRoleNav } from './StaffRoleNav.tsx'
 import { StaffNavigationTabs, type NavTabKey } from './StaffNavigationTabs.tsx'
@@ -10,6 +11,7 @@ import { StaffQueueTable } from './StaffQueueTable.tsx'
 import { StaffLoadingSkeleton, StaffEmptyState, StaffErrorState } from './StaffStateFeedback.tsx'
 import { StaffIncidentDetailModal } from './StaffIncidentDetailModal.tsx'
 import { StaffWireframeView } from '../staff-w1/StaffWireframeView.tsx'
+import { StaffDashboardView } from '../staff-w7/StaffDashboardView.tsx'
 
 const initialFilters: StaffFiltersState = {
   search: '',
@@ -28,8 +30,14 @@ function defaultTabForRole(user: UserSummary): NavTabKey {
   return 'manager-dept-all'
 }
 
-export function StaffManagementView({ user }: { user: UserSummary }) {
-  const [viewMode, setViewMode] = useState<'interactive' | 'wireframe'>('interactive')
+export function StaffManagementView({
+  user,
+  initialMode = 'dashboard',
+}: {
+  user: UserSummary
+  initialMode?: 'interactive' | 'wireframe' | 'dashboard'
+}) {
+  const [viewMode, setViewMode] = useState<'interactive' | 'wireframe' | 'dashboard'>(initialMode)
   const [activeNavTabKey, setActiveNavTabKey] = useState<NavTabKey>(() => defaultTabForRole(user))
   const [filters, setFilters] = useState<StaffFiltersState>(initialFilters)
 
@@ -101,8 +109,8 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
         // 2. Chuyển đổi triage sang boolean nếu có
         const triageBool = filters.triage === 'true' ? true : filters.triage === 'false' ? false : undefined
 
-        // 3. Lấy dữ liệu phân trang theo cursor từ Mock API
-        const paginatedResult = await mockN7StaffRoleApi.getStaffQueueWithCursor(currentUser, {
+        // 3. Lấy dữ liệu phân trang theo cursor từ Staff API Adapter (hỗ trợ cả Real API & Mock)
+        const paginatedResult = await staffApiAdapter.getStaffQueue(currentUser, {
           department_id: filters.department_id || undefined,
           priority: filters.priority || undefined,
           status: filters.status || undefined,
@@ -209,8 +217,44 @@ export function StaffManagementView({ user }: { user: UserSummary }) {
 
   // Đặt lại dữ liệu mẫu
   const handleResetData = () => {
-    mockN7StaffRoleApi.resetData()
+    staffApiAdapter.resetData()
     handleRefresh()
+  }
+
+  // Nếu người dùng chọn xem Dashboard N7-W07
+  if (viewMode === 'dashboard') {
+    return (
+      <div className="staff-view-wrapper">
+        <StaffRoleNav
+          currentUser={currentUser}
+          isSimulatedError={isSimulatedError}
+          onToggleSimulatedError={() => {
+            setIsLoading(true)
+            setIsSimulatedError((v) => !v)
+          }}
+          onRefresh={handleRefresh}
+          onResetData={handleResetData}
+          viewMode={viewMode}
+          onToggleViewMode={setViewMode}
+          incidents={rawQueue}
+          onSelectIncident={(inc) => setSelectedIncident(inc)}
+        />
+        <div className="mt-3">
+          <StaffDashboardView
+            currentUser={currentUser}
+            onSelectIncident={(inc) => setSelectedIncident(inc)}
+          />
+        </div>
+
+        {selectedIncident && (
+          <StaffIncidentDetailModal
+            incident={selectedIncident}
+            currentUser={currentUser}
+            onClose={() => setSelectedIncident(null)}
+          />
+        )}
+      </div>
+    )
   }
 
   // Nếu người dùng chọn xem Wireframe W1
