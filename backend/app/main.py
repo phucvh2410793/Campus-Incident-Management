@@ -11,7 +11,9 @@ from app.auth.router import router as auth_router
 from app.automation.router import router as internal_router
 from app.core.config import get_settings
 from app.db import engine
+from app.evidence.router import router as evidence_router
 from app.incidents.router import router as incidents_router
+from app.incidents.updates import router as incident_updates_router
 from app.workflow.router import router as workflow_router
 
 
@@ -42,6 +44,8 @@ app.include_router(auth_router)
 # Internal service routes: n8n automation and callback endpoints (N5 ownership).
 app.include_router(internal_router)
 app.include_router(incidents_router)
+app.include_router(incident_updates_router)
+app.include_router(evidence_router)
 
 app.add_middleware(
     CORSMiddleware,

@@ -141,6 +141,8 @@ docker compose down
 
 `down` giữ các named volume. Không dùng `down -v` nếu cần giữ dữ liệu. Backup/restore production chưa được triển khai; các mảng N1 (PostgreSQL), N2 (evidence) và N5 (n8n) phải thử khôi phục ở W11 theo [kế hoạch](KE_HOACH_CONG_VIEC.md) trước khi sử dụng dữ liệu thật.
 
+File bằng chứng nằm trong volume Docker `evidence_data` tại `/app/private_evidence`, tách khỏi `postgres_data`. Khi backup hoặc chuyển máy cần giữ cả hai volume cùng thời điểm; chỉ backup PostgreSQL sẽ thiếu file. `docker compose down` giữ volume, còn `down -v` xóa cả dữ liệu và file.
+
 | Vấn đề | Kiểm tra |
 | --- | --- |
 | Không kết nối Docker engine | Mở Docker Desktop, chọn Linux containers, chạy lại `docker version` |
