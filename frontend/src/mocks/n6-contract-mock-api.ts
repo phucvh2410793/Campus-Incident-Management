@@ -259,7 +259,22 @@ class N6ContractMockApi {
    * Timeline công khai của sự cố (chỉ visibility: 'public')
    */
   async getPublicHistory(id: string, reporterId = '22e09230-76fd-4638-a97f-96919031e40b'): Promise<HistoryItem[]> {
-    await this.getIncidentDetail(id, reporterId) // Kiểm tra quyền truy cập sự cố
+    const inc = await this.getIncidentDetail(id, reporterId) // Kiểm tra quyền truy cập sự cố
+    if (!this.history[id]) {
+      this.history[id] = [
+        {
+          id: 'hist-' + inc.id,
+          action: 'incident_created',
+          actor_display_name: inc.reporter_name || 'Người báo cáo',
+          visibility: 'public',
+          created_at: inc.reported_at,
+          details: {
+            category: inc.category,
+            title: inc.title,
+          },
+        },
+      ]
+    }
     const list = this.history[id] || []
     return list.filter((item) => item.visibility === 'public')
   }
@@ -369,6 +384,16 @@ class N6ContractMockApi {
   async getAttachments(incidentId: string, reporterId = '22e09230-76fd-4638-a97f-96919031e40b'): Promise<AttachmentSummary[]> {
     await this.getIncidentDetail(incidentId, reporterId)
     return this.attachments[incidentId] || []
+  }
+
+  /**
+   * Khôi phục dữ liệu ban đầu cho kiểm thử
+   */
+  reset(): void {
+    this.incidents = JSON.parse(JSON.stringify(INITIAL_MOCK_INCIDENTS))
+    this.history = JSON.parse(JSON.stringify(INITIAL_MOCK_HISTORY))
+    this.attachments = JSON.parse(JSON.stringify(INITIAL_MOCK_ATTACHMENTS))
+    this.idempotencyStore.clear()
   }
 }
 

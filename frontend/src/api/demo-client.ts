@@ -10,10 +10,13 @@ import {
   mockN6ReporterApi,
   type CreateIncidentInput,
   type MockAttachmentInput,
+  type PaginatedResult,
+  type SupplementIncidentInput,
 } from '../mocks/n6-contract-mock-api.ts'
 import type { UserSummary } from '../types/auth.ts'
 import type {
   AttachmentSummary,
+  Category,
   Comment,
   HistoryItem,
   IncidentResponse,
@@ -96,7 +99,41 @@ export const demoClient = {
     }
     return att
   },
-  // N7-W04: Chi tiết, Timeline, File, Comments & Quyền
+  // N6-W07: Danh sách sự cố người báo cáo với cursor, bộ lọc, overdue
+  async getMyIncidents(
+    params?: { category?: Category; status?: Status; limit?: number; cursor?: string }
+  ): Promise<PaginatedResult<IncidentSummary>> {
+    if (!session || !['reporter', 'administrator'].includes(session.user.role)) {
+      throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
+    }
+    return mockN6ReporterApi.getMyIncidents(session.user.id, params)
+  },
+  // N6-W07: Chi tiết sự cố của người báo cáo (Scope isolation: chỉ xem của mình)
+  async getReporterIncidentDetail(id: string): Promise<IncidentResponse> {
+    if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem chi tiết.')
+    return mockN6ReporterApi.getIncidentDetail(id, session.user.id)
+  },
+  // N6-W07: Timeline công khai (chỉ visibility: 'public', stripped nội bộ)
+  async getPublicHistory(id: string): Promise<HistoryItem[]> {
+    if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem lịch sử.')
+    return mockN6ReporterApi.getPublicHistory(id, session.user.id)
+  },
+  // N6-W07: Bổ sung thông tin cho sự cố (kiểm tra expected_version, cấm khi resolved/closed)
+  async supplementIncident(
+    id: string,
+    input: SupplementIncidentInput
+  ): Promise<{ id: string; created_at: string; incident_version: number }> {
+    if (!session || !['reporter', 'administrator'].includes(session.user.role)) {
+      throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
+    }
+    return mockN6ReporterApi.supplementIncident(id, input, session.user.id)
+  },
+  // N6-W07: Lấy danh sách tệp đính kèm của sự cố (reporter)
+  async getReporterAttachments(id: string): Promise<AttachmentSummary[]> {
+    if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem tệp đính kèm.')
+    return mockN6ReporterApi.getAttachments(id, session.user.id)
+  },
+  // N7-W04: Chi tiết, Timeline, File, Comments & Quyền (Staff)
   async getIncidentDetail(id: string): Promise<IncidentResponse> {
     if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem chi tiết.')
     return mockN7StaffRoleApi.getIncidentDetail(id, session.user)
