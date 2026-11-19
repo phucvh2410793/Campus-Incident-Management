@@ -57,3 +57,6 @@ class AssignmentIncident(BaseModel):
 class AssignmentResponse(BaseModel):
     incident: AssignmentIncident
     history_id: UUID
+
+class PriorityChangeResponse(BaseModel):
+    incident: AssignmentIncident

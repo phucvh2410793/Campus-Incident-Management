@@ -3,6 +3,7 @@
 from enum import StrEnum
 from typing import Self
 from uuid import UUID
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -28,6 +29,11 @@ class AssignRequest(Request):
 
 class AcknowledgeRequest(Request):
     pass
+
+
+class PriorityChangeRequest(Request):
+    priority: Literal["p1", "p2", "p3"]
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class TransitionRequest(Request):
