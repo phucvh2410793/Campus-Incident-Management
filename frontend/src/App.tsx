@@ -9,8 +9,8 @@ import { ElectricalHazardReportForm } from './features/reporter-w4/ElectricalHaz
 import { PhishingReportForm } from './features/reporter-w5/PhishingReportForm.tsx'
 import { StaffManagementView } from './features/staff/StaffManagementView.tsx'
 
-type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/reporter/water-leak' | '/reporter/electrical-hazard' | '/reporter/phishing' | '/staff' | '/health'
-const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/reporter/water-leak', '/reporter/electrical-hazard', '/reporter/phishing', '/staff', '/health']
+type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/reporter/water-leak' | '/reporter/electrical-hazard' | '/reporter/phishing' | '/staff' | '/staff/dashboard' | '/health'
+const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/reporter/water-leak', '/reporter/electrical-hazard', '/reporter/phishing', '/staff', '/staff/dashboard', '/health']
 
 function currentRoute(): Route {
   const path = window.location.pathname
@@ -77,6 +77,7 @@ export default function App() {
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/electrical-hazard' ? 'active' : ''}`} onClick={() => navigate('/reporter/electrical-hazard')}>Báo cáo nguy hiểm điện</button>}
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/phishing' ? 'active' : ''}`} onClick={() => navigate('/reporter/phishing')}>Báo cáo Phishing</button>}
         {canReport && <button type="button" className={`nav-link ${route === '/reporter/wireframe' ? 'active' : ''}`} onClick={() => navigate('/reporter/wireframe')}>Mẫu giao diện báo cáo</button>}
+        {canWork && <button type="button" className={`nav-link ${route === '/staff/dashboard' ? 'active' : ''}`} onClick={() => navigate('/staff/dashboard')}>Dashboard chỉ số</button>}
         {canWork && <button type="button" className={`nav-link ${route === '/staff' ? 'active' : ''}`} onClick={() => navigate('/staff')}>Hàng đợi xử lý</button>}
         <button type="button" className={`nav-link ${route === '/health' ? 'active' : ''}`} onClick={() => navigate('/health')}>Kết nối API</button>
         {session && <button type="button" className="nav-link" onClick={logout}>Đăng xuất</button>}
@@ -90,7 +91,8 @@ export default function App() {
       {allowed && route === '/reporter/electrical-hazard' && <ElectricalHazardReportForm />}
       {allowed && route === '/reporter/phishing' && <PhishingReportForm />}
       {allowed && route === '/reporter/wireframe' && <ReporterWireframeView />}
-      {allowed && route === '/staff' && session && <StaffManagementView key={session.user.id} user={session.user} />}
+      {allowed && route === '/staff/dashboard' && session && <StaffManagementView key={`${session.user.id}-dashboard`} user={session.user} initialMode="dashboard" />}
+      {allowed && route === '/staff' && session && <StaffManagementView key={session.user.id} user={session.user} initialMode="interactive" />}
       {allowed && route === '/health' && <HealthSection />}
     </main>
     <footer className="app-footer"><p>Campus Incident Management · USTH</p></footer>
