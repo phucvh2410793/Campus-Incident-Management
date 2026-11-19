@@ -17,6 +17,8 @@ from app.workflow.contracts import AcknowledgeRequest, AssignRequest, WorkflowVi
 from app.workflow.models import Assignment, AuditLog, StatusHistory
 from app.workflow.repository import WorkflowRepository
 from app.workflow.schemas import AssignmentIncident, AssignmentResponse
+from app.sla.policy import calculate_deadline
+from app.workflow.contracts import PriorityChangeRequest
 
 
 def assignment_snapshot(incident: Incident) -> dict:
@@ -29,6 +31,13 @@ def assignment_snapshot(incident: Incident) -> dict:
         ),
     }
 
+def priority_snapshot(incident: Incident) -> dict:
+    deadline = incident.acknowledgment_deadline_at
+    return {
+        "priority": incident.priority,
+        "acknowledgment_deadline_at": deadline.isoformat() if deadline else None,
+        "version": incident.version,
+    }
 
 class AssignmentService:
     def __init__(self, session: Session):
@@ -244,3 +253,88 @@ class AcknowledgmentService:
                 history_id=history.id,
             )
         return response
+
+class PriorityChangeService:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def change(
+        self,
+        principal: Principal,
+        incident_id: UUID,
+        payload: PriorityChangeRequest,
+        *,
+        request_id: UUID,
+    ):
+        with self.session.begin_nested():
+            incident = self.session.get(Incident, incident_id, populate_existing=True)
+
+            if incident is None:
+                raise WorkflowViolation("not_found", 404)
+
+            decision = IncidentPolicy().evaluate(principal, incident, "assign")
+            if not decision.allowed:
+                raise WorkflowViolation(decision.code, decision.http_status)
+
+            if incident.version != payload.expected_version:
+                raise WorkflowViolation("version_conflict", 409)
+
+            if incident.acknowledged_at is not None:
+                raise WorkflowViolation("already_acknowledged", 409)
+
+            if incident.status not in {"reported", "assigned"}:
+                raise WorkflowViolation("invalid_transition", 409)
+
+            if incident.priority == payload.priority:
+                raise WorkflowViolation("priority_unchanged", 409)
+
+            now = datetime.now(UTC)
+            new_deadline = calculate_deadline(incident.reported_at, payload.priority)
+            before = priority_snapshot(incident)
+
+            result = self.session.execute(
+                update(Incident)
+                .where(
+                    Incident.id == incident_id,
+                    Incident.version == payload.expected_version,
+                    Incident.acknowledged_at.is_(None),
+                    Incident.status.in_(["reported", "assigned"]),
+                )
+                .values(
+                    priority=payload.priority,
+                    acknowledgment_deadline_at=new_deadline,
+                    version=Incident.version + 1,
+                    updated_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+
+            if result.rowcount != 1:
+                raise WorkflowViolation("version_conflict", 409)
+
+            self.session.refresh(incident)
+
+            WorkflowRepository(self.session).add_audit(
+                AuditLog(
+                    incident_id=incident_id,
+                    actor_id=UUID(principal.user_id),
+                    action="incident.priority_changed",
+                    request_id=request_id,
+                    created_at=now,
+                    before=before,
+                    after={
+                        **priority_snapshot(incident),
+                        "reason": payload.reason,
+                    },
+                )
+            )
+
+            OutboxEventPublisher(self.session).create_and_publish(
+                EventType.INCIDENT_PRIORITY_CHANGED,
+                incident_id,
+                request_id,
+                occurred_at=now,
+            )
+
+            self.session.flush()
+            return AssignmentIncident.model_validate(incident)
