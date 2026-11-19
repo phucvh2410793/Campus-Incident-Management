@@ -52,7 +52,12 @@ class AssignmentService:
         request_id: UUID,
     ) -> AssignmentResponse:
         with self.session.begin_nested():
-            incident = self.session.get(Incident, incident_id, populate_existing=True)
+            incident = self.session.get(
+                Incident,
+                incident_id,
+                populate_existing=True,
+                with_for_update=True,
+            )
             if incident is None:
                 raise WorkflowViolation("not_found", 404)
             decision = IncidentPolicy().evaluate(principal, incident, "assign")
