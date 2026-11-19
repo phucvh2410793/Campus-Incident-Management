@@ -231,13 +231,14 @@ def test_postgresql_migration_sql_contains_foreign_keys_and_indexes():
     assert "TIMESTAMP WITH TIME ZONE" in sql
 
 
-def test_n4_migration_is_the_only_head_and_models_are_registered():
+def test_n4_migration_remains_in_single_chain_and_models_are_registered():
     from app import models  # noqa: F401
     from app.db import Base
 
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["n4_w2_workflow"]
+    assert len(scripts.get_heads()) == 1
+    assert scripts.get_revision("n4_w2_workflow") is not None
     assert {table.name for table in TABLES} <= set(Base.metadata.tables)
 
 
