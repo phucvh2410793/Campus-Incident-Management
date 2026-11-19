@@ -13,6 +13,8 @@
     "test:w2": "node --experimental-strip-types test-w2-client.ts",
     "test:n6:w4": "node --experimental-strip-types test-n6-w4.ts",
     "test:n6:w5": "node --experimental-strip-types test-n6-w5.ts",
+    "test:n6:w6": "node --experimental-strip-types test-n6-w6.ts",
+    "test:n6:w7": "node --experimental-strip-types test-n6-w7.ts",
     "preview": "vite preview"
   },
   "dependencies": {
