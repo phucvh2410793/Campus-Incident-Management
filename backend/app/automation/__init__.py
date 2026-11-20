@@ -7,6 +7,20 @@ service bearer authentication for /internal/* endpoints, and fixtures for n8n or
 
 from app.automation.config import OutboxSettings
 from app.automation.models import Notification, OutboxEvent
+from app.automation.notifications import (
+    DemoEmailSender,
+    EmailDispatchResult,
+    NotificationDeliveryStatus,
+    NotificationEmail,
+    NotificationKind,
+    NotificationSecurityError,
+    build_assigned_notification,
+    build_p1_alert_notification,
+    build_reported_notification,
+    demo_email_sender,
+    dispatch_notification_task,
+    validate_notification_safety,
+)
 from app.automation.publisher import (
     EventPublisher,
     IdempotencyConflictError,
@@ -50,6 +64,18 @@ __all__ = [
     "IdempotencyConflictError",
     "OutboxEvent",
     "Notification",
+    "NotificationKind",
+    "NotificationDeliveryStatus",
+    "NotificationEmail",
+    "NotificationSecurityError",
+    "build_reported_notification",
+    "build_assigned_notification",
+    "build_p1_alert_notification",
+    "validate_notification_safety",
+    "DemoEmailSender",
+    "EmailDispatchResult",
+    "demo_email_sender",
+    "dispatch_notification_task",
     "OutboxRepository",
     "NotificationRepository",
     "OutboxWorkerStub",

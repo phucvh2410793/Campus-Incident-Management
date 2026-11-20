@@ -224,3 +224,86 @@ backend\.venv\Scripts\python.exe scripts\send-signed-event.py `
 
 Thêm `--timestamp-offset -301` để kiểm tra nhánh từ chối event quá hạn. Chạy lại cùng
 `--event-id` sau khi event đã `done` để kiểm tra nhánh duplicate.
+
+## 11. Notification Claim, Idempotency và Email thử nghiệm (W6)
+
+Nhằm bảo vệ hệ thống không gửi email trùng lặp và tuân thủ chặt chẽ quyền riêng tư dữ liệu:
+
+### Idempotency Key của Notification
+- Khóa duy nhất: `(event_id, kind, recipient_user_id)`.
+- `POST /internal/notifications/claim`:
+  - Lần claim đầu tiên: tạo bản ghi `notifications` với `status='pending'` và trả `should_send=true`.
+  - Lần claim tiếp theo (do n8n replay hoặc retry): trả bản ghi hiện tại và `should_send=false`. Email sender sẽ **không được kích hoạt** lần hai.
+
+### 3 kịch bản Email thử nghiệm MVP
+1. **Báo cáo sự cố (`incident_reported`)**:
+   - Gửi đến: Người báo sự cố (`reporter_user_id`, email: `reporter@demo.invalid`).
+   - Tiêu đề: `[CIM] Tiếp nhận báo cáo sự cố #{short_id}`.
+   - Nội dung: Xác nhận mã sự cố, danh mục, thời gian báo cáo và đường dẫn theo dõi tiến độ:
+     `http://localhost:5173/incidents/{incident_id}`.
+2. **Phân công kỹ thuật viên (`incident_assigned`)**:
+   - Gửi đến: Nhân viên kỹ thuật phụ trách (`handler_user_id`, email: `handler@demo.invalid`).
+   - Tiêu đề: `[CIM] Phân công xử lý sự cố #{short_id}`.
+   - Nội dung: Thông tin bộ phận, mức ưu tiên và đường dẫn thao tác tiếp nhận (Acknowledge) trong portal staff:
+     `http://localhost:5173/staff/incidents/{incident_id}`.
+3. **Cảnh báo khẩn cấp P1 (`p1_alert`)**:
+   - Gửi đến: Quản lý bộ phận trực ban / điều hành (`manager_user_id`, email: `manager@demo.invalid`).
+   - Tiêu đề: `[CIM KHẨN CẤP] Cảnh báo sự cố mức độ P1 #{short_id}`.
+   - Nội dung: Cảnh báo mức ưu tiên P1, lý do đánh giá khẩn cấp, hạn SLA tiếp nhận và đường dẫn trực ban:
+     `http://localhost:5173/staff/incidents/{incident_id}`.
+
+### Chính sách an toàn nội dung (Content Security Guard)
+Hàm `validate_notification_safety()` kiểm tra và chặn mọi email nếu phát hiện:
+- **File đính kèm hoặc raw binary**: Không đính kèm tệp, không chứa base64 payload, không chứa URL download có token.
+- **Mật khẩu & Bí mật**: Tuyệt đối không gửi `password`, `password_hash`, token phiên (`Bearer`, `access_token`), HMAC secret hay API key.
+- **Ghi chú nội bộ**: Tuyệt đối không đưa ghi chú nội bộ của nhân viên (`[internal]`, `internal_note`, `visibility: internal`) vào email gửi cho người dùng.
+
+## 12. Dead-letter Queue, Admin Retry và Trạng thái Sent/Failed/Uncertain (W7)
+
+Nhằm đảm bảo mọi lỗi giữa chừng đều truy vết được và ngăn ngừa sự cố gửi lặp thư:
+
+### Phân loại trạng thái gửi Notification
+- `pending`: Đã claim tác vụ, đang chờ gửi.
+- `sent`: Đã nhận xác nhận gửi thành công từ mail server, lưu kèm `provider_message_id`.
+- `failed`: Mail server từ chối vĩnh viễn (lỗi 5xx hoặc địa chỉ người nhận không hợp lệ).
+- `uncertain`: Mạng bị đứt gãy hoặc timeout giữa chừng khi đang gửi thư (không rõ mail server đã phát thư tới hộp thư người nhận hay chưa).
+
+> [!IMPORTANT]
+> **Quy tắc bất biến (Critical Invariant): `uncertain` không bao giờ được tự động gửi lại.**
+> Khi một notification ở trạng thái `sent` hoặc `uncertain`, hàm `claim_notification` luôn trả về `should_send=false`. Không có worker hay job tự động nào được phép tự ý gửi lại. Chỉ người quản trị hệ thống (Administrator) sau khi xác minh thủ công mới được quyền re-queue có lý do kiểm toán.
+
+### Dead-letter Queue (DLQ) cho Outbox Event
+Một event outbox được chuyển thành `failed` (dead-letter) khi:
+1. Đã thử đủ số lần `max_attempts` (mặc định 5 lần) với exponential backoff bị chặn trần (`max_backoff_seconds=300`).
+2. Gặp lỗi 4xx không thể khắc phục (như 400 Bad Request, 422 Unprocessable Content), được đưa thẳng vào dead-letter để tránh lãng phí lần thử.
+
+Thông điệp lỗi được cắt gọt còn tối đa 1000 ký tự và che giấu toàn bộ secret (`***`) trước khi lưu trữ hoặc xuất qua API.
+
+### Thao tác quản trị Admin Retry (bắt buộc có lý do)
+Admin có thể kiểm tra danh sách và gửi lại thủ công qua API hoặc CLI:
+
+#### Qua API nội bộ:
+- `GET /internal/events/failed`: Liệt kê các event trong hàng đợi dead-letter với phân trang cursor.
+- `POST /internal/events/{event_id}/retry`: Re-queue event thất bại về trạng thái `pending`, reset `attempt_count=0`. Yêu cầu body `{ "reason": "Lý do thao tác" }`. Endpoint có tính idempotent nếu event đã `pending` hoặc `done`.
+- `GET /internal/notifications?status=uncertain`: Liệt kê các thông báo đang ở trạng thái nghi ngờ.
+- `POST /internal/notifications/{id}/retry`: Re-queue thông báo `failed` hoặc `uncertain` về `pending` kèm lý do.
+- `GET /internal/dead-letter/summary`: Thống kê tổng số lượng event lỗi, notification lỗi và notification uncertain.
+
+#### Qua CLI:
+```powershell
+# Xem danh sách event chết
+backend\.venv\Scripts\python.exe -m app.automation.run_worker --list-failed
+
+# Re-queue event outbox bị chết (bắt buộc --reason)
+backend\.venv\Scripts\python.exe -m app.automation.run_worker --retry-event <event_id> --reason "Khôi phục kết nối mạng tới n8n"
+
+# Xem danh sách thông báo uncertain
+backend\.venv\Scripts\python.exe -m app.automation.run_worker --list-notifications --status uncertain
+
+# Re-queue thông báo uncertain (bắt buộc --reason)
+backend\.venv\Scripts\python.exe -m app.automation.run_worker --retry-notification <notification_id> --reason "Đã xác minh hộp thư đích chưa nhận được thư"
+```
+
+### Kiểm thử W6 & W7
+Bộ kiểm thử chấp nhận toàn diện cho W6 và W7 được triển khai tại:
+`backend/tests/test_automation_notifications.py` (34 test cases bao phủ kịch bản gửi đúng người/link, chặn file/secret/ghi chú nội bộ, dead-letter, lý do admin retry, và bất biến uncertain).
