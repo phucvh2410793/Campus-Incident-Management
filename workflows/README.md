@@ -100,3 +100,47 @@ backend\.venv\Scripts\python.exe scripts\send-signed-event.py `
 Lệnh trên trả `status=processed` kèm `run_id`. Thêm `--timestamp-offset -301` để thấy nhánh `401 rejected`; gửi lại cùng `--event-id` sau khi event đã `done` để thấy nhánh `200 duplicate`.
 
 Acceptance test tự động của W5 nằm ở `backend/tests/test_automation_workflow.py` và không cần n8n đang chạy.
+
+---
+
+## 4. Workflow thông báo và email thử nghiệm (`notification-processor.json` — N5 W6 & W7)
+
+`notification-processor.json` tiếp nhận yêu cầu gửi thông báo cho 3 kịch bản: **báo cáo (reported)**, **phân công (assigned)** và **khẩn cấp (P1)**:
+
+- **Webhook Notification Receiver**: nhận POST tại path `notifications` (`http://localhost:5678/webhook/notifications`).
+- **Claim Notification Task**: gọi `POST /internal/notifications/claim` với khóa idempotency `(event_id, kind, recipient_user_id)`.
+- **Should Send Email?**: kiểm tra flag `should_send`. Nếu notification đã tồn tại, workflow trả `status=skipped` và không gửi email trùng (chống nhân đôi thông báo).
+- **Dispatch Safe Email**: gọi `POST /internal/notifications/dispatch` để định dạng và gửi email thử nghiệm:
+  - Báo cáo: gửi đến người báo kèm link công khai `/incidents/{id}`.
+  - Phân công: gửi đến kỹ thuật viên kèm link `/staff/incidents/{id}`.
+  - P1: gửi đến quản lý kèm cảnh báo khẩn cấp và deadline SLA.
+  - **Chính sách an toàn**: tuyệt đối không gửi kèm file đính kèm, secret/password/token hay ghi chú nội bộ (internal notes).
+- **Delivery Sent?**: phân loại kết quả gửi thành `sent`, `failed` hoặc `uncertain`:
+  - `sent`: gửi thành công, có `provider_message_id`.
+  - `uncertain`: mạng chập chờn hoặc timeout giữa chừng; **quy tắc bất biến: uncertain không bao giờ tự động gửi lại** để tránh spam hộp thư.
+  - `failed`: lỗi vĩnh viễn (địa chỉ không tồn tại hoặc lỗi mail server).
+
+### Kiểm thử workflow và xử lý lỗi (W7)
+
+1. Gửi thử yêu cầu gửi thông báo:
+```powershell
+$body = @{
+  event_id = 'd69996e8-ae76-44d4-a396-41694498feb3'
+  scenario = 'reported'
+  recipient_user_id = '10000000-0000-4000-8000-000000000001'
+  recipient_email = 'reporter@demo.invalid'
+  incident_id = '2ee24992-34d3-4955-9e5c-f7446fd42393'
+} | ConvertTo-Json -Compress
+Invoke-RestMethod http://localhost:5678/webhook/notifications -Method Post -Body $body -ContentType 'application/json'
+```
+
+2. Kiểm tra hàng chờ lỗi và trạng thái uncertain qua CLI quản trị:
+```powershell
+# Liệt kê thông báo lỗi hoặc uncertain
+backend\.venv\Scripts\python.exe -m app.automation.run_worker --list-notifications --status uncertain
+
+# Admin gửi lại thủ công có ghi chú lý do
+backend\.venv\Scripts\python.exe -m app.automation.run_worker --retry-notification <notification_id> --reason "Xác nhận với người nhận chưa có thư"
+```
+
+Acceptance test tự động của W6 & W7 nằm tại `backend/tests/test_automation_notifications.py`.
