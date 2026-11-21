@@ -1,16 +1,19 @@
 """Comment operations using W2 storage and caller-owned transactions.
 
-No HTTP routes or commits here. A savepoint keeps version/comment/audit together
-if validation or persistence fails. The caller commits the enclosing transaction.
+A savepoint keeps version/comment/audit together if validation or persistence
+fails. The HTTP adapter commits the enclosing transaction.
 """
 
-from datetime import UTC
+import base64
+import binascii
+import json
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import update
+from sqlalchemy import select, tuple_, update
 from sqlalchemy.orm import Session
 
-from app.auth.policy import Principal
+from app.auth.policy import IncidentPolicy, Principal
 from app.comments.contracts import CommentRequest
 from app.comments.logic import (
     CommentData,
@@ -87,7 +90,9 @@ class CommentService:
         incident = self._incident(principal, incident_id)
         records = self.comments.list_for_incident(
             incident_id,
-            include_internal=principal.role != "reporter",
+            include_internal=IncidentPolicy()
+            .evaluate(principal, incident, "read_internal_comment")
+            .allowed,
             limit=limit,
             offset=offset,
         )
@@ -99,3 +104,56 @@ class CommentService:
                 data = data.model_copy(update={"created_at": data.created_at.replace(tzinfo=UTC)})
             result.append(serialize_comment(principal, incident, data))
         return result
+
+    def list_page(
+        self,
+        principal: Principal,
+        incident_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> dict:
+        """Return a stable, permission-filtered page for the HTTP adapter."""
+        if not 1 <= limit <= 100:
+            raise ValueError("Invalid pagination")
+        incident = self._incident(principal, incident_id)
+        can_read_internal = (
+            IncidentPolicy().evaluate(principal, incident, "read_internal_comment").allowed
+        )
+        query = select(Comment).where(Comment.incident_id == incident_id)
+        if not can_read_internal:
+            query = query.where(Comment.visibility == "public")
+        if cursor is not None:
+            try:
+                if not cursor or len(cursor) > 512:
+                    raise ValueError
+                raw = base64.b64decode(
+                    cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True
+                )
+                timestamp_text, comment_id_text = json.loads(raw)
+                timestamp = datetime.fromisoformat(timestamp_text)
+                comment_id = UUID(comment_id_text)
+                if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                    raise ValueError
+            except (ValueError, TypeError, UnicodeDecodeError, binascii.Error) as exc:
+                raise ValueError("Invalid cursor") from exc
+            query = query.where(
+                tuple_(Comment.created_at, Comment.id) > tuple_(timestamp, comment_id)
+            )
+        rows = self.session.scalars(
+            query.order_by(Comment.created_at, Comment.id).limit(limit + 1)
+        ).all()
+        next_cursor = None
+        if len(rows) > limit:
+            last = rows[limit - 1]
+            token = json.dumps(
+                [last.created_at.isoformat(), str(last.id)], separators=(",", ":")
+            ).encode()
+            next_cursor = base64.urlsafe_b64encode(token).decode().rstrip("=")
+        items = []
+        for record in rows[:limit]:
+            data = CommentData.model_validate(record)
+            if data.created_at.tzinfo is None:
+                data = data.model_copy(update={"created_at": data.created_at.replace(tzinfo=UTC)})
+            items.append(serialize_comment(principal, incident, data))
+        return {"items": items, "next_cursor": next_cursor}

@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.auth.errors import UnauthenticatedError, unauthenticated_response
 from app.auth.router import router as auth_router
 from app.automation.router import router as internal_router
+from app.comments.router import router as comments_router
 from app.core.config import get_settings
 from app.db import engine
 from app.incidents.router import router as incidents_router
@@ -42,6 +43,7 @@ app.include_router(auth_router)
 # Internal service routes: n8n automation and callback endpoints (N5 ownership).
 app.include_router(internal_router)
 app.include_router(incidents_router)
+app.include_router(comments_router)
 
 app.add_middleware(
     CORSMiddleware,
