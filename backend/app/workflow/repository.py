@@ -24,7 +24,14 @@ class WorkflowRepository:
 
     def add_audit(self, audit: AuditLog) -> None:
         # Only structured workflow metadata; never comment/file bodies or secrets.
-        allowed = {"status", "department_id", "assigned_handler_id", "version"}
+        allowed = {
+            "status",
+            "department_id",
+            "assigned_handler_id",
+            "version",
+            "disposition",
+            "duplicate_of_id",
+        }
         for values in (audit.before, audit.after):
             if set(values) - allowed:
                 raise ValueError("Unsupported audit fields")
@@ -40,6 +47,10 @@ class WorkflowRepository:
                 if key == "version" and (type(value) is not int or value < 1):
                     raise ValueError("Invalid audit version")
                 if key in {"department_id", "assigned_handler_id"} and value is not None:
+                    UUID(value)
+                if key == "disposition" and value not in {"duplicate", "invalid"}:
+                    raise ValueError("Invalid audit disposition")
+                if key == "duplicate_of_id" and value is not None:
                     UUID(value)
         self.session.add(audit)
 
