@@ -13,7 +13,17 @@ from app.automation.schemas import EventType
 from app.incidents.models import Incident
 from app.models import Department, User
 from app.rules.engine import MANUAL_QUEUE
-from app.workflow.contracts import AcknowledgeRequest, AssignRequest, WorkflowViolation
+from app.sla.policy import calculate_deadline
+from app.workflow.contracts import (
+    AcknowledgeRequest,
+    AssignRequest,
+    DispositionRequest,
+    PriorityChangeRequest,
+    Status,
+    TransitionRequest,
+    WorkflowViolation,
+    validate_transition,
+)
 from app.workflow.models import Assignment, AuditLog, StatusHistory
 from app.workflow.repository import WorkflowRepository
 from app.workflow.schemas import AssignmentIncident, AssignmentResponse
@@ -30,6 +40,15 @@ def assignment_snapshot(incident: Incident) -> dict:
     }
 
 
+def priority_snapshot(incident: Incident) -> dict:
+    deadline = incident.acknowledgment_deadline_at
+    return {
+        "priority": incident.priority,
+        "acknowledgment_deadline_at": deadline.isoformat() if deadline else None,
+        "version": incident.version,
+    }
+
+
 class AssignmentService:
     def __init__(self, session: Session):
         self.session = session
@@ -43,7 +62,12 @@ class AssignmentService:
         request_id: UUID,
     ) -> AssignmentResponse:
         with self.session.begin_nested():
-            incident = self.session.get(Incident, incident_id, populate_existing=True)
+            incident = self.session.get(
+                Incident,
+                incident_id,
+                populate_existing=True,
+                with_for_update=True,
+            )
             if incident is None:
                 raise WorkflowViolation("not_found", 404)
             decision = IncidentPolicy().evaluate(principal, incident, "assign")
@@ -239,6 +263,268 @@ class AcknowledgmentService:
             self.session.flush()
             # Same command response envelope as /assign, but this ID is a
             # real status_history row because acknowledgment changes status.
+            response = AssignmentResponse(
+                incident=AssignmentIncident.model_validate(incident),
+                history_id=history.id,
+            )
+        return response
+
+
+class PriorityChangeService:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def change(
+        self,
+        principal: Principal,
+        incident_id: UUID,
+        payload: PriorityChangeRequest,
+        *,
+        request_id: UUID,
+    ):
+        with self.session.begin_nested():
+            incident = self.session.get(Incident, incident_id, populate_existing=True)
+
+            if incident is None:
+                raise WorkflowViolation("not_found", 404)
+
+            decision = IncidentPolicy().evaluate(principal, incident, "assign")
+            if not decision.allowed:
+                raise WorkflowViolation(decision.code, decision.http_status)
+
+            if incident.version != payload.expected_version:
+                raise WorkflowViolation("version_conflict", 409)
+
+            if incident.acknowledged_at is not None:
+                raise WorkflowViolation("already_acknowledged", 409)
+
+            if incident.status not in {"reported", "assigned"}:
+                raise WorkflowViolation("invalid_transition", 409)
+
+            if incident.priority == payload.priority:
+                raise WorkflowViolation("priority_unchanged", 409)
+
+            now = datetime.now(UTC)
+            new_deadline = calculate_deadline(incident.reported_at, payload.priority)
+            before = priority_snapshot(incident)
+
+            result = self.session.execute(
+                update(Incident)
+                .where(
+                    Incident.id == incident_id,
+                    Incident.version == payload.expected_version,
+                    Incident.acknowledged_at.is_(None),
+                    Incident.status.in_(["reported", "assigned"]),
+                )
+                .values(
+                    priority=payload.priority,
+                    acknowledgment_deadline_at=new_deadline,
+                    version=Incident.version + 1,
+                    updated_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+
+            if result.rowcount != 1:
+                raise WorkflowViolation("version_conflict", 409)
+
+            self.session.refresh(incident)
+
+            WorkflowRepository(self.session).add_audit(
+                AuditLog(
+                    incident_id=incident_id,
+                    actor_id=UUID(principal.user_id),
+                    action="incident.priority_changed",
+                    request_id=request_id,
+                    created_at=now,
+                    before=before,
+                    after={
+                        **priority_snapshot(incident),
+                        "reason": payload.reason,
+                    },
+                )
+            )
+
+            OutboxEventPublisher(self.session).create_and_publish(
+                EventType.INCIDENT_PRIORITY_CHANGED,
+                incident_id,
+                request_id,
+                occurred_at=now,
+            )
+
+            self.session.flush()
+            return AssignmentIncident.model_validate(incident)
+
+
+class TransitionService:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def transition(
+        self,
+        principal: Principal,
+        incident_id: UUID,
+        payload: TransitionRequest,
+        *,
+        request_id: UUID,
+    ) -> AssignmentResponse:
+        """Apply a generic status transition; caller commits the outer transaction.
+
+        The conditional UPDATE is the concurrency boundary, same as acknowledge.
+        """
+        with self.session.begin_nested():
+            incident = self.session.get(Incident, incident_id, populate_existing=True)
+            if incident is None:
+                raise WorkflowViolation("not_found", 404)
+            decision = IncidentPolicy().evaluate(principal, incident, "work")
+            if not decision.allowed:
+                raise WorkflowViolation(decision.code, decision.http_status)
+            if incident.version != payload.expected_version:
+                raise WorkflowViolation("version_conflict", 409)
+            validate_transition(Status(incident.status), principal.role, payload)
+
+            now = datetime.now(UTC)
+            before = assignment_snapshot(incident)
+            target = payload.target_status
+            result = self.session.execute(
+                update(Incident)
+                .where(
+                    Incident.id == incident_id,
+                    Incident.version == payload.expected_version,
+                    Incident.status == incident.status,
+                )
+                .values(
+                    status=target.value,
+                    version=Incident.version + 1,
+                    resolved_at=now if target == Status.RESOLVED else Incident.resolved_at,
+                    closed_at=now if target == Status.CLOSED else Incident.closed_at,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                raise WorkflowViolation("version_conflict", 409)
+
+            actor_id = UUID(principal.user_id)
+            history = StatusHistory(
+                incident_id=incident_id,
+                actor_id=actor_id,
+                from_status=before["status"],
+                to_status=target.value,
+                incident_version=payload.expected_version + 1,
+                reason=payload.reason,
+                resolution=payload.resolution,
+                visibility="public",
+                created_at=now,
+            )
+            repository = WorkflowRepository(self.session)
+            repository.add_history(history)
+            self.session.refresh(incident)
+            repository.add_audit(
+                AuditLog(
+                    incident_id=incident_id,
+                    actor_id=actor_id,
+                    action="incident.transition",
+                    request_id=request_id,
+                    created_at=now,
+                    before=before,
+                    after=assignment_snapshot(incident),
+                )
+            )
+            self.session.flush()
+            response = AssignmentResponse(
+                incident=AssignmentIncident.model_validate(incident),
+                history_id=history.id,
+            )
+        return response
+
+
+class DispositionService:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def disposition(
+        self,
+        principal: Principal,
+        incident_id: UUID,
+        payload: DispositionRequest,
+        *,
+        request_id: UUID,
+    ) -> AssignmentResponse:
+        """Close an incident as duplicate/invalid; caller commits the outer transaction.
+
+        The incident is closed, never deleted. The conditional UPDATE is the
+        concurrency boundary, same as acknowledge and transition.
+        """
+        with self.session.begin_nested():
+            incident = self.session.get(Incident, incident_id, populate_existing=True)
+            if incident is None:
+                raise WorkflowViolation("not_found", 404)
+            decision = IncidentPolicy().evaluate(principal, incident, "work")
+            if not decision.allowed:
+                raise WorkflowViolation(decision.code, decision.http_status)
+            if incident.version != payload.expected_version:
+                raise WorkflowViolation("version_conflict", 409)
+            if principal.role not in {"department_manager", "administrator"}:
+                raise WorkflowViolation("forbidden", 403)
+            if incident.status == "closed":
+                raise WorkflowViolation("invalid_transition", 409)
+            if payload.kind == "duplicate":
+                if payload.duplicate_of_id == incident_id:
+                    raise WorkflowViolation("validation_error", 422)
+                original = self.session.get(Incident, payload.duplicate_of_id)
+                if original is None:
+                    raise WorkflowViolation("validation_error", 422)
+
+            now = datetime.now(UTC)
+            before = assignment_snapshot(incident)
+            result = self.session.execute(
+                update(Incident)
+                .where(
+                    Incident.id == incident_id,
+                    Incident.version == payload.expected_version,
+                    Incident.status == incident.status,
+                )
+                .values(
+                    status="closed",
+                    version=Incident.version + 1,
+                    closed_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                raise WorkflowViolation("version_conflict", 409)
+
+            actor_id = UUID(principal.user_id)
+            history = StatusHistory(
+                incident_id=incident_id,
+                actor_id=actor_id,
+                from_status=before["status"],
+                to_status="closed",
+                incident_version=payload.expected_version + 1,
+                reason=payload.reason,
+                visibility="public",
+                created_at=now,
+            )
+            repository = WorkflowRepository(self.session)
+            repository.add_history(history)
+            self.session.refresh(incident)
+            after = assignment_snapshot(incident)
+            after["disposition"] = payload.kind
+            after["duplicate_of_id"] = (
+                str(payload.duplicate_of_id) if payload.duplicate_of_id else None
+            )
+            repository.add_audit(
+                AuditLog(
+                    incident_id=incident_id,
+                    actor_id=actor_id,
+                    action="incident.disposition",
+                    request_id=request_id,
+                    created_at=now,
+                    before=before,
+                    after=after,
+                )
+            )
+            self.session.flush()
             response = AssignmentResponse(
                 incident=AssignmentIncident.model_validate(incident),
                 history_id=history.id,

@@ -9,10 +9,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.automation.models import OutboxEvent
 from app.incidents.models import Incident
 from app.rules.engine import evaluate_incident
 from app.rules.models import RuleEvaluation, RuleVersion
 from app.sla.models import Escalation
+from app.sla.service import SlaEscalationService
 
 
 def test_demo_rules_match_the_shared_fixture(db_session):
@@ -94,3 +96,45 @@ def test_escalation_is_unique_per_incident_and_level(db_session, test_user):
             )
         )
         db_session.flush()
+
+
+def test_sla_check_escalates_once_and_skips_acknowledged_incidents(db_session, test_user):
+    now = datetime(2026, 11, 2, 17, 0, tzinfo=UTC)
+    overdue = Incident(
+        id=uuid4(),
+        reporter_id=test_user.id,
+        category="water_leak",
+        title="Overdue water leak",
+        description="Water is leaking into the main corridor.",
+        building="Building A",
+        answers={"leak_amount": "large", "near_electricity": "no"},
+        priority="p1",
+        reported_at=datetime(2026, 11, 2, 16, 0, tzinfo=UTC),
+    )
+    acknowledged = Incident(
+        id=uuid4(),
+        reporter_id=test_user.id,
+        category="water_leak",
+        title="Acknowledged leak",
+        description="The team already acknowledged this water leak.",
+        building="Building B",
+        answers={"leak_amount": "small", "near_electricity": "no"},
+        priority="p1",
+        reported_at=datetime(2026, 11, 2, 16, 0, tzinfo=UTC),
+        acknowledged_at=datetime(2026, 11, 2, 16, 10, tzinfo=UTC),
+    )
+    db_session.add_all([overdue, acknowledged])
+    db_session.flush()
+
+    assert SlaEscalationService(db_session).check(now) == (1, 1)
+    assert SlaEscalationService(db_session).check(now) == (1, 0)
+    assert overdue.escalation_level == 1
+    assert db_session.scalar(select(Escalation.id).where(Escalation.incident_id == overdue.id))
+    assert (
+        db_session.scalar(select(Escalation.id).where(Escalation.incident_id == acknowledged.id))
+        is None
+    )
+    assert (
+        db_session.scalar(select(OutboxEvent.id).where(OutboxEvent.incident_id == overdue.id))
+        is not None
+    )

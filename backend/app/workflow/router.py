@@ -12,9 +12,22 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db
 from app.auth.policy import Principal, get_principal
-from app.workflow.contracts import AcknowledgeRequest, AssignRequest, WorkflowViolation
-from app.workflow.schemas import AssignmentResponse
-from app.workflow.service import AcknowledgmentService, AssignmentService
+from app.workflow.contracts import (
+    AcknowledgeRequest,
+    AssignRequest,
+    DispositionRequest,
+    PriorityChangeRequest,
+    TransitionRequest,
+    WorkflowViolation,
+)
+from app.workflow.schemas import AssignmentResponse, PriorityChangeResponse
+from app.workflow.service import (
+    AcknowledgmentService,
+    AssignmentService,
+    DispositionService,
+    PriorityChangeService,
+    TransitionService,
+)
 
 
 def error_response(status: int, code: str, request_id: UUID, details=None, headers=None):
@@ -101,6 +114,72 @@ def acknowledge_incident(
 ):
     try:
         result = AcknowledgmentService(db).acknowledge(
+            principal,
+            incident_id,
+            payload,
+            request_id=request.state.workflow_request_id,
+        )
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/{incident_id}/priority", response_model=PriorityChangeResponse)
+def change_incident_priority(
+    incident_id: UUID,
+    payload: PriorityChangeRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        result = PriorityChangeService(db).change(
+            principal,
+            incident_id,
+            payload,
+            request_id=request.state.workflow_request_id,
+        )
+        db.commit()
+        return PriorityChangeResponse(incident=result)
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/{incident_id}/transitions", response_model=AssignmentResponse)
+def transition_incident(
+    incident_id: UUID,
+    payload: TransitionRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        result = TransitionService(db).transition(
+            principal,
+            incident_id,
+            payload,
+            request_id=request.state.workflow_request_id,
+        )
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/{incident_id}/disposition", response_model=AssignmentResponse)
+def disposition_incident(
+    incident_id: UUID,
+    payload: DispositionRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        result = DispositionService(db).disposition(
             principal,
             incident_id,
             payload,

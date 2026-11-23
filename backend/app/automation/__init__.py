@@ -30,7 +30,6 @@ from app.automation.publisher import (
     set_event_publisher,
 )
 from app.automation.repository import NotificationRepository, OutboxRepository
-from app.automation.router import router as internal_router
 from app.automation.schemas import EventEnvelope, EventType
 from app.automation.security import (
     DEFAULT_TIMESTAMP_TOLERANCE_SECONDS,
@@ -97,5 +96,4 @@ __all__ = [
     "is_user_token",
     "require_service_bearer",
     "token_manager",
-    "internal_router",
 ]

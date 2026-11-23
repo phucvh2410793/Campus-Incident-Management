@@ -195,7 +195,9 @@ def test_internal_endpoint_accepts_valid_service_bearer_token(
     assert data["status"] == "pending"
 
 
-def test_service_bearer_token_rotation_allows_seamless_transition(client: TestClient):
+def test_service_bearer_token_rotation_allows_seamless_transition(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
     """Token rotation supports multiple active token hashes simultaneously.
 
     When rotating:
@@ -204,6 +206,9 @@ def test_service_bearer_token_rotation_allows_seamless_transition(client: TestCl
     """
     token_old = "service-token-version-1"
     token_new = "service-token-version-2"
+    monkeypatch.setattr(
+        "app.automation.router.SlaEscalationService.check", lambda self, now=None: (0, 0)
+    )
 
     hash_old = token_manager.register_service_token(token_old)
     _ = token_manager.register_service_token(token_new)
@@ -569,8 +574,11 @@ def test_complete_internal_notification(client: TestClient, db_session: Session)
     assert data["status"] == "sent"
 
 
-def test_sla_check_endpoint(client: TestClient):
+def test_sla_check_endpoint(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """POST /internal/sla/check returns checked and escalation counts."""
+    monkeypatch.setattr(
+        "app.automation.router.SlaEscalationService.check", lambda self, now=None: (0, 0)
+    )
     response = client.post(
         "/internal/sla/check",
         headers={"Authorization": f"Bearer {VALID_SERVICE_TOKEN}"},
