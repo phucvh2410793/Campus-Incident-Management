@@ -107,7 +107,8 @@ Code: AcknowledgmentService in backend/app/workflow/service.py and the existing 
 router. No migration is required. Tests: `python -m pytest tests/test_acknowledgment.py -q`
 from backend with project dependencies installed. SQLite tests cover service/API behavior,
 UTC clocks, repeated calls, conditional updates and rollback. Real PostgreSQL parallel
-requests and race with the SLA job require later integration verification (N3/N4 W7).
+requests are verified in W7 below; the race with the SLA job is owned by N3's W7
+(atomic escalation).
 
 ## W6 transitions and disposition
 
@@ -145,5 +146,42 @@ with project dependencies installed. SQLite tests cover the four transition
 edges, role and version handling, reopen timestamp retention, duplicate/invalid
 disposition, endpoint validation, authentication, record scope and rollback;
 45 cases. Together with the existing workflow tests the suite is 215 passed.
-Real PostgreSQL parallel requests still require later integration verification
-(N3/N4 W7).
+Real PostgreSQL parallel requests are verified in W7 below.
+
+## W7 audit, history and concurrency
+
+No new feature, transition or endpoint. W7 standardizes audit and history
+across all five N4 mutating commands and verifies concurrent updates on real
+PostgreSQL.
+
+The audit/history review found one real inconsistency: the comment audit
+snapshot recorded only `{"version": ...}` while assign, acknowledge,
+transitions and disposition all record status and version.
+`CommentService.create` now writes `before={"status": incident.status,
+"version": expected_version}` and `after={"status": incident.status,
+"version": expected_version + 1}`. Everything else was confirmed correct and
+left unchanged: the assign response `history_id` is the assignment id (per
+the API contract), comments write no StatusHistory (its
+from_status/to_status constraint requires a status change), only assign
+publishes an outbox event, and each command's conditional UPDATE guards the
+fields it depends on. The `supplements` endpoint in the contract has no
+implementation yet and belongs to N7's W7 work.
+
+Concurrency: two commands with the same `expected_version` must yield exactly
+one success and one 409 `version_conflict`, on every mutating command.
+Verified on real PostgreSQL (Docker Compose, database
+`campus_incident_test`, migrated to head `n4_w2_workflow`; see
+`docs/development.md` for `TEST_DATABASE_URL`). Tests:
+`backend/tests/test_workflow_concurrency_pg.py` runs each pair of commands in
+two threads with separate sessions, released together by a barrier. Six cases:
+concurrent resolve, acknowledge, disposition, assign and comment, plus a mixed
+resolve-versus-disposition race. All 6 passed: the winner commits version 2
+with exactly one StatusHistory and one AuditLog (comment writes no history),
+the loser gets 409 `version_conflict`. The acknowledgment race with the N3 SLA
+escalation job is owned by N3's W7 (atomic escalation); N4's side is the
+version gate verified here.
+
+Code: the comment audit fix in `backend/app/comments/service.py`; the new
+tests in `backend/tests/test_workflow_concurrency_pg.py`. No migration is
+required. Run `python -m pytest tests/test_workflow_concurrency_pg.py -q`
+from backend with `TEST_DATABASE_URL` pointing at `campus_incident_test`.
