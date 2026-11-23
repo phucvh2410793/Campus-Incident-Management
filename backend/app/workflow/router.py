@@ -16,14 +16,16 @@ from app.workflow.contracts import (
     AcknowledgeRequest,
     AssignRequest,
     DispositionRequest,
+    PriorityChangeRequest,
     TransitionRequest,
     WorkflowViolation,
 )
-from app.workflow.schemas import AssignmentResponse
+from app.workflow.schemas import AssignmentResponse, PriorityChangeResponse
 from app.workflow.service import (
     AcknowledgmentService,
     AssignmentService,
     DispositionService,
+    PriorityChangeService,
     TransitionService,
 )
 
@@ -119,6 +121,28 @@ def acknowledge_incident(
         )
         db.commit()
         return result
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/{incident_id}/priority", response_model=PriorityChangeResponse)
+def change_incident_priority(
+    incident_id: UUID,
+    payload: PriorityChangeRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        result = PriorityChangeService(db).change(
+            principal,
+            incident_id,
+            payload,
+            request_id=request.state.workflow_request_id,
+        )
+        db.commit()
+        return PriorityChangeResponse(incident=result)
     except Exception:
         db.rollback()
         raise

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,6 +10,7 @@ from app.automation.publisher import get_event_publisher
 from app.automation.repository import NotificationRepository, OutboxRepository
 from app.automation.security import WebhookVerificationResult, require_valid_webhook_signature
 from app.automation.service_auth import ServicePrincipal, get_optional_db, require_service_bearer
+from app.sla.service import SlaEscalationService
 
 router = APIRouter(
     prefix="/internal",
@@ -355,10 +356,24 @@ def check_sla_internal(
     service: Annotated[ServicePrincipal, Depends(require_service_bearer)],
 ) -> SlaCheckResponse:
     """POST /internal/sla/check - Periodic SLA review endpoint called by scheduled n8n job."""
-    # Stub hook for SLA checks (N3/N5 W8 integration)
+    if db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database is unavailable",
+        )
+
+    try:
+        checked_count, escalations_created = SlaEscalationService(db).check(
+            now=datetime.now(UTC)
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     return SlaCheckResponse(
-        checked_count=0,
-        escalations_created=0,
+        checked_count=checked_count,
+        escalations_created=escalations_created,
     )
 
 

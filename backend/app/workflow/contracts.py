@@ -1,7 +1,7 @@
 """Standalone W1 contracts, independent of authentication and incident models."""
 
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -28,6 +28,11 @@ class AssignRequest(Request):
 
 class AcknowledgeRequest(Request):
     pass
+
+
+class PriorityChangeRequest(Request):
+    priority: Literal["p1", "p2", "p3"]
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class TransitionRequest(Request):

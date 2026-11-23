@@ -29,6 +29,9 @@ class WorkflowRepository:
             "department_id",
             "assigned_handler_id",
             "version",
+            "priority",
+            "acknowledgment_deadline_at",
+            "reason",
             "disposition",
             "duplicate_of_id",
         }
@@ -48,6 +51,13 @@ class WorkflowRepository:
                     raise ValueError("Invalid audit version")
                 if key in {"department_id", "assigned_handler_id"} and value is not None:
                     UUID(value)
+                if key == "priority" and value not in {None, "p1", "p2", "p3"}:
+                    raise ValueError("Invalid audit priority")
+                if key == "reason" and (not isinstance(value, str) or not value.strip()):
+                    raise ValueError("Invalid audit reason")
+                if key == "acknowledgment_deadline_at" and value is not None:
+                    if not isinstance(value, str):
+                        raise ValueError("Invalid audit deadline")
                 if key == "disposition" and value not in {"duplicate", "invalid"}:
                     raise ValueError("Invalid audit disposition")
                 if key == "duplicate_of_id" and value is not None:
