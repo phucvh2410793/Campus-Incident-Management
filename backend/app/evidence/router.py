@@ -73,9 +73,9 @@ async def upload_attachment(
             if incident.version != expected_version:
                 raise WorkflowViolation("version_conflict", 409)
             count = db.scalar(
-                select(func.count()).select_from(IncidentAttachment).where(
-                    IncidentAttachment.incident_id == incident_id
-                )
+                select(func.count())
+                .select_from(IncidentAttachment)
+                .where(IncidentAttachment.incident_id == incident_id)
             )
             if count >= 5:
                 raise WorkflowViolation("attachment_limit", 409)
@@ -146,13 +146,18 @@ def list_attachments(
         .order_by(IncidentAttachment.created_at, IncidentAttachment.id)
     )
     response.headers["X-Request-ID"] = str(_request_id(request))
-    return {"items": [{
-        "id": item.id,
-        "original_name": item.original_name,
-        "content_type": item.content_type,
-        "size_bytes": item.size_bytes,
-        "created_at": item.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-    } for item in records]}
+    return {
+        "items": [
+            {
+                "id": item.id,
+                "original_name": item.original_name,
+                "content_type": item.content_type,
+                "size_bytes": item.size_bytes,
+                "created_at": item.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+            }
+            for item in records
+        ]
+    }
 
 
 @router.get("/{incident_id}/attachments/{attachment_id}/download")

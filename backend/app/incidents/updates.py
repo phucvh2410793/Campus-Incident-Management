@@ -164,9 +164,11 @@ def get_history(
         )
     people = {
         user.id: user.display_name
-        for user in db.scalars(select(User).where(User.id.in_(
-            {record.actor_id for record in records if record.actor_id is not None}
-        )))
+        for user in db.scalars(
+            select(User).where(
+                User.id.in_({record.actor_id for record in records if record.actor_id is not None})
+            )
+        )
     }
     items = []
     for record in records:
@@ -190,22 +192,24 @@ def get_history(
                 details["resolution"] = record.resolution
             if record.reason and staff:
                 details["reason"] = record.reason
-        items.append({
-            "id": record.id,
-            "action": action,
-            "actor_display_name": people.get(record.actor_id, "Hệ thống"),
-            "created_at": _stamp(record.created_at),
-            "visibility": visibility,
-            "details": details,
-        })
+        items.append(
+            {
+                "id": record.id,
+                "action": action,
+                "actor_display_name": people.get(record.actor_id, "Hệ thống"),
+                "created_at": _stamp(record.created_at),
+                "visibility": visibility,
+                "details": details,
+            }
+        )
     items.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
     # The creation event is stable and visible to every authorized reader.
     created = {
         "id": incident.id,
         "action": "incident.created",
-        "actor_display_name": people.get(incident.reporter_id) or db.scalar(
-            select(User.display_name).where(User.id == incident.reporter_id)
-        ) or "Hệ thống",
+        "actor_display_name": people.get(incident.reporter_id)
+        or db.scalar(select(User.display_name).where(User.id == incident.reporter_id))
+        or "Hệ thống",
         "created_at": _stamp(incident.reported_at),
         "visibility": "public",
         "details": {},

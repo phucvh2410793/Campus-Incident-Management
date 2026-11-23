@@ -400,8 +400,6 @@ def test_event_processor_workflow_has_verification_duplicate_and_run_id():
     # Every non-responder node has an outgoing connection in the workflow graph.
     outgoing = set(workflow["connections"])
     respond_nodes = {
-        name
-        for name, node in nodes.items()
-        if node["type"] == "n8n-nodes-base.respondToWebhook"
+        name for name, node in nodes.items() if node["type"] == "n8n-nodes-base.respondToWebhook"
     }
     assert set(nodes) - respond_nodes == outgoing

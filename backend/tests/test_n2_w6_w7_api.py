@@ -54,30 +54,47 @@ def test_supplement_permissions_state_and_private_history(
     handler, handler_headers = make_user(client, db_session, "handler", department.id)
     incident.department_id = department.id
     incident.assigned_handler_id = handler.id
-    db_session.add(StatusHistory(
-        id=uuid4(), incident_id=incident.id, actor_id=handler.id,
-        from_status="reported", to_status="assigned", incident_version=2,
-        visibility="internal", created_at=incident.reported_at,
-    ))
+    db_session.add(
+        StatusHistory(
+            id=uuid4(),
+            incident_id=incident.id,
+            actor_id=handler.id,
+            from_status="reported",
+            to_status="assigned",
+            incident_version=2,
+            visibility="internal",
+            created_at=incident.reported_at,
+        )
+    )
     db_session.flush()
     db_session.commit()
     url = f"/api/v1/incidents/{incident.id}"
-    assert client.post(
-        f"{url}/supplements", json={"text": "More details", "expected_version": 1},
-        headers=handler_headers,
-    ).status_code == 403
-    assert all(item["visibility"] == "public" for item in client.get(
-        f"{url}/history", headers=auth_headers
-    ).json()["items"])
-    assert any(item["visibility"] == "internal" for item in client.get(
-        f"{url}/history", headers=admin_headers
-    ).json()["items"])
+    assert (
+        client.post(
+            f"{url}/supplements",
+            json={"text": "More details", "expected_version": 1},
+            headers=handler_headers,
+        ).status_code
+        == 403
+    )
+    assert all(
+        item["visibility"] == "public"
+        for item in client.get(f"{url}/history", headers=auth_headers).json()["items"]
+    )
+    assert any(
+        item["visibility"] == "internal"
+        for item in client.get(f"{url}/history", headers=admin_headers).json()["items"]
+    )
     incident.status = "closed"
     db_session.flush()
-    assert client.post(
-        f"{url}/supplements", json={"text": "More details", "expected_version": 1},
-        headers=admin_headers,
-    ).status_code == 409
+    assert (
+        client.post(
+            f"{url}/supplements",
+            json={"text": "More details", "expected_version": 1},
+            headers=admin_headers,
+        ).status_code
+        == 409
+    )
     assert admin.id != test_user.id
 
 
@@ -89,8 +106,10 @@ def test_attachment_upload_list_download_and_scope(
     other, other_headers = make_user(client, db_session, "reporter")
     url = f"/api/v1/incidents/{incident.id}/attachments"
     upload = client.post(
-        url, data={"expected_version": "1"},
-        files={"file": ("../evidence.pdf", PDF, "application/pdf")}, headers=auth_headers,
+        url,
+        data={"expected_version": "1"},
+        files={"file": ("../evidence.pdf", PDF, "application/pdf")},
+        headers=auth_headers,
     )
     assert upload.status_code == 201, upload.text
     body = upload.json()
@@ -106,20 +125,29 @@ def test_attachment_upload_list_download_and_scope(
     assert "attachment" in download.headers["content-disposition"]
     assert client.get(url, headers=other_headers).status_code == 404
     assert client.get(f"{url}/{body['id']}/download", headers=other_headers).status_code == 404
-    assert client.post(
-        url, data={"expected_version": "1"},
-        files={"file": ("extra.pdf", PDF, "application/pdf")}, headers=auth_headers,
-    ).status_code == 409
+    assert (
+        client.post(
+            url,
+            data={"expected_version": "1"},
+            files={"file": ("extra.pdf", PDF, "application/pdf")},
+            headers=auth_headers,
+        ).status_code
+        == 409
+    )
     assert len(list(tmp_path.iterdir())) == 1
     assert other.id != test_user.id
 
 
-@pytest.mark.parametrize("name,data,mime", [
-    ("fake.pdf", b"not a pdf", "application/pdf"),
-    ("wrong.png", PDF, "image/png"),
-    ("empty.pdf", b"", "application/pdf"),
-    ("huge.pdf", b"%PDF-" + b"x" * (10 * 1024 * 1024), "application/pdf"),
-])
+@pytest.mark.parametrize(
+    "name,data,mime",
+    [
+        ("fake.pdf", b"not a pdf", "application/pdf"),
+        ("wrong.png", PDF, "image/png"),
+        ("empty.pdf", b"", "application/pdf"),
+        ("huge.pdf", b"%PDF-" + b"x" * (10 * 1024 * 1024), "application/pdf"),
+    ],
+    ids=["fake-pdf", "wrong-png", "empty-pdf", "huge-pdf"],
+)
 def test_invalid_files_leave_no_metadata_or_file(
     client, db_session, test_user, auth_headers, tmp_path, monkeypatch, name, data, mime
 ):
@@ -127,7 +155,9 @@ def test_invalid_files_leave_no_metadata_or_file(
     incident = make_incident(db_session, test_user.id, 404)
     response = client.post(
         f"/api/v1/incidents/{incident.id}/attachments",
-        data={"expected_version": "1"}, files={"file": (name, data, mime)}, headers=auth_headers,
+        data={"expected_version": "1"},
+        files={"file": (name, data, mime)},
+        headers=auth_headers,
     )
     assert response.status_code == 422
     assert db_session.scalar(select(func.count()).select_from(IncidentAttachment)) == 0
@@ -152,7 +182,8 @@ def test_upload_failure_cleans_private_file(
         client.post(
             f"/api/v1/incidents/{incident.id}/attachments",
             data={"expected_version": "1"},
-            files={"file": ("evidence.pdf", PDF, "application/pdf")}, headers=auth_headers,
+            files={"file": ("evidence.pdf", PDF, "application/pdf")},
+            headers=auth_headers,
         )
     assert list(tmp_path.iterdir()) == []
 
@@ -166,14 +197,17 @@ def test_attachment_limit_and_administrator_scope(
     url = f"/api/v1/incidents/{incident.id}/attachments"
     for version in range(1, 6):
         uploaded = client.post(
-            url, data={"expected_version": str(version)},
+            url,
+            data={"expected_version": str(version)},
             files={"file": (f"evidence-{version}.pdf", PDF, "application/pdf")},
             headers=admin_headers,
         )
         assert uploaded.status_code == 201, uploaded.text
     full = client.post(
-        url, data={"expected_version": "6"},
-        files={"file": ("sixth.pdf", PDF, "application/pdf")}, headers=admin_headers,
+        url,
+        data={"expected_version": "6"},
+        files={"file": ("sixth.pdf", PDF, "application/pdf")},
+        headers=admin_headers,
     )
     assert full.status_code == 409 and full.json()["error"]["code"] == "attachment_limit"
     assert len(list(tmp_path.iterdir())) == 5
@@ -197,7 +231,8 @@ def test_failed_supplement_does_not_advance_version_or_leave_history(
     with pytest.raises(RuntimeError, match="simulated"):
         client.post(
             f"/api/v1/incidents/{incident.id}/supplements",
-            json={"text": "New information", "expected_version": 1}, headers=auth_headers,
+            json={"text": "New information", "expected_version": 1},
+            headers=auth_headers,
         )
     assert db_session.get(type(incident), incident.id, populate_existing=True).version == 1
     assert db_session.scalar(select(func.count()).select_from(IncidentSupplement)) == 0

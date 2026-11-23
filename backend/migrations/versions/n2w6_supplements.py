@@ -17,7 +17,9 @@ def upgrade() -> None:
         sa.Column("actor_id", sa.Uuid(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("text", sa.String(2000), nullable=False),
         sa.Column("incident_version", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("length(trim(text)) BETWEEN 1 AND 2000", name="ck_supplements_text"),
         sa.UniqueConstraint("incident_id", "incident_version", name="uq_supplements_version"),
     )

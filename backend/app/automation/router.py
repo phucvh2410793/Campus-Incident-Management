@@ -593,9 +593,7 @@ def check_sla_internal(
         )
 
     try:
-        checked_count, escalations_created = SlaEscalationService(db).check(
-            now=datetime.now(UTC)
-        )
+        checked_count, escalations_created = SlaEscalationService(db).check(now=datetime.now(UTC))
         db.commit()
     except Exception:
         db.rollback()

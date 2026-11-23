@@ -4,7 +4,7 @@ Campus Incident Management là dự án nhóm xây dựng nền tảng web tiế
 
 Tên đề tài trong proposal: **Campus Incident Management**. Chuyên ngành: **Cyber Security**, University of Science and Technology of Hanoi (USTH).
 
-> **Trạng thái hiện tại:** Đã hoàn thành phần việc W4 của N1–N7. Backend có xác thực bằng bearer token, API tạo incident với Idempotency-Key, phân loại/triage, phân công và outbox dispatcher. Frontend có form báo nguy hiểm điện và màn hình chi tiết/timeline; N6–N7 vẫn dùng mock API cho các endpoint chưa được tích hợp. API file và luồng thông báo thực tế sẽ được hoàn thiện ở các tuần tiếp theo.
+> **Trạng thái hiện tại:** Các nhánh công việc W6–W7 của N1–N7 đã được merge. Backend có xác thực và phân quyền, API incident/bằng chứng, phân loại/SLA, vòng đời xử lý, audit và thông báo qua outbox. Frontend có luồng người báo và nhân viên, gồm form báo cáo, timeline và dashboard demo; một số màn hình vẫn dùng mock API, chưa nối hoàn toàn với backend thật.
 
 ## Tài liệu dự án
 
