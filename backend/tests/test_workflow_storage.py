@@ -237,7 +237,10 @@ def test_migrations_have_one_head_and_workflow_models_are_registered():
 
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["n1_w6_admin_audit"]
+    assert scripts.get_heads() == ["n1_n2_w6_merge"]
+    assert scripts.get_revision("n4_w2_workflow") is not None
+    assert scripts.get_revision("n1_w6_admin_audit") is not None
+    assert scripts.get_revision("n2w6_supplements") is not None
     assert {table.name for table in TABLES} <= set(Base.metadata.tables)
 
 

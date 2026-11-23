@@ -27,6 +27,12 @@ API kiểm tra `answers` theo schema của từng loại. Request tạo incident
 
 Bảng này chỉ lưu metadata; file nằm trong private storage với `storage_key` ngẫu nhiên. Không trả key hoặc public URL. Các field gồm `id`, `incident_id`, `uploaded_by`, `storage_key`, `original_name`, `content_type`, `size_bytes`, `created_at`. Upload sau khi tạo incident, chỉ nhận PDF/PNG/JPEG, tối đa 10 MiB/file và năm file/incident.
 
+API kiểm tra nội dung file và MIME khai báo, tăng `version` khi upload thành công. File lỗi hoặc transaction DB thất bại được xóa ngay; download chỉ qua API sau khi kiểm quyền. Docker lưu file trong volume `evidence_data`, tách khỏi PostgreSQL và không public qua static route.
+
+### `incident_supplements`
+
+Migration `n2w6_supplements` thêm bảng này để lưu thông tin reporter bổ sung mà không sửa câu trả lời gốc. Mỗi bản ghi có `incident_id`, `actor_id`, `text`, `incident_version`, `created_at`. Nội dung, version và audit được ghi trong cùng transaction. Timeline ghép bản ghi bổ sung với sự kiện tạo báo cáo, phân công, chuyển trạng thái và comment; reporter chỉ thấy mục public.
+
 ### `idempotency_records`
 
 Khóa chính là `(user_id, key)`; `key` lấy từ header `Idempotency-Key`. Bảng lưu SHA-256 `request_fingerprint`, `incident_id`, `created_at` và `expires_at` (sau 24 giờ). Cùng user/key/body thì trả incident cũ; đổi body với cùng key thì trả 409. Ghi idempotency record, incident và event `incident.reported` trong cùng transaction. Có thể xóa record hết hạn.
