@@ -134,11 +134,13 @@ export function calculateRoleDashboard(
 
   if (actor.role === 'handler') {
     // Handler chỉ thấy việc được giao cho cá nhân mình
-    scopedIncidents = allIncidents.filter((i) => i.assigned_handler_id === actor.id)
+    scopedIncidents = allIncidents.filter(
+      (i) => i.assigned_handler_id === actor.id && i.department_id === actor.department_id
+    )
     scopeLabel = `Cá nhân Kỹ thuật viên (${actor.display_name})`
   } else if (actor.role === 'department_manager') {
     if (actor.department_id === 'dept-triage') {
-      scopedIncidents = allIncidents.filter((i) => i.department_id === 'dept-triage' || i.triage_required)
+      scopedIncidents = allIncidents.filter((i) => i.department_id === 'dept-triage')
       scopeLabel = 'Hàng đợi Phân loại & Triage ban đầu'
     } else {
       scopedIncidents = allIncidents.filter((i) => i.department_id === actor.department_id)
@@ -154,9 +156,9 @@ export function calculateRoleDashboard(
   // 3. Lọc sự kiện Outbox theo phạm vi Role
   let scopedOutbox: OutboxEventMock[] = []
   if (actor.role === 'handler') {
-    // Sự kiện liên quan đến sự cố của handler hoặc bộ phận
+    // Chỉ đếm sự kiện của những sự cố handler được phép xem.
     scopedOutbox = allOutboxEvents.filter(
-      (e) => scopedIncidents.some((i) => i.id === e.incident_id) || e.department_id === actor.department_id
+      (e) => scopedIncidents.some((i) => i.id === e.incident_id)
     )
   } else if (actor.role === 'department_manager') {
     scopedOutbox = allOutboxEvents.filter((e) => e.department_id === actor.department_id)

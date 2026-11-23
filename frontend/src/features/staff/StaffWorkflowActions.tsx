@@ -32,14 +32,15 @@ export function StaffWorkflowActions({
   // TIÊU CHÍ HOÀN THÀNH N7-W06: "Không hiện hành động sai trạng thái"
   // Xác định các hành động hợp lệ theo đúng máy trạng thái (State Machine Guard)
   // =========================================================================
-  const canShowTriage = incident.triage_required && incident.status === 'reported'
-  const canShowAssign = ['reported', 'assigned', 'in_progress'].includes(incident.status)
-  const canShowPriority = ['reported', 'assigned', 'in_progress'].includes(incident.status) && !incident.triage_required
-  const canShowAck = incident.status === 'assigned'
-  const canShowResolve = incident.status === 'in_progress'
-  const canShowClose = incident.status === 'resolved'
-  const canShowReopen = incident.status === 'resolved' || incident.status === 'closed'
-  const canShowDisposition = incident.status !== 'closed'
+  const canManage = permissions.isDepartmentManager || permissions.isAdmin
+  const canShowTriage = canManage && incident.department_id === 'dept-triage' && incident.triage_required && incident.status === 'reported'
+  const canShowAssign = permissions.canAssign && ['reported', 'assigned', 'in_progress'].includes(incident.status)
+  const canShowPriority = permissions.canAdjustPriority && ['reported', 'assigned'].includes(incident.status) && !incident.acknowledged_at && !incident.triage_required
+  const canShowAck = permissions.canAcknowledge && incident.status === 'assigned'
+  const canShowResolve = permissions.canResolve && incident.status === 'in_progress'
+  const canShowClose = permissions.canClose && incident.status === 'resolved'
+  const canShowReopen = canManage && (incident.status === 'resolved' || incident.status === 'closed')
+  const canShowDisposition = canManage && incident.status !== 'closed'
 
   // Danh sách các tab hợp lệ ở trạng thái hiện tại
   const validActionTabs: ActionTabKey[] = []
@@ -58,7 +59,7 @@ export function StaffWorkflowActions({
     if (canShowAck && permissions.canAcknowledge) return 'ack'
     if (canShowResolve && permissions.canResolve) return 'resolve'
     if (canShowClose && permissions.canClose) return 'close'
-    if (canShowReopen && permissions.canClose) return 'reopen'
+    if (canShowReopen) return 'reopen'
     if (canShowAssign) return 'assign'
     if (canShowPriority) return 'priority'
     return 'disposition'
@@ -67,7 +68,7 @@ export function StaffWorkflowActions({
   // Đảm bảo tab đang chọn luôn hợp lệ theo trạng thái hiện tại
   const currentTab = validActionTabs.includes(activeActionTab)
     ? activeActionTab
-    : (validActionTabs[0] || 'assign')
+    : validActionTabs[0]
 
   // Trạng thái chế độ Adapter
   const [adapterMode, setAdapterMode] = useState<AdapterMode>(() => staffApiAdapter.getMode())
@@ -537,7 +538,7 @@ export function StaffWorkflowActions({
               </p>
             </div>
           </div>
-          {currentTab !== 'triage' && (
+          {canShowTriage && currentTab !== 'triage' && (
             <button
               type="button"
               className="btn btn-sm btn-warning"
@@ -597,6 +598,9 @@ export function StaffWorkflowActions({
       </div>
 
       {/* SUB-NAV CHO CÁC HÀNH ĐỘNG HỢP LỆ VỚI TRẠNG THÁI (TIÊU CHÍ N7-W06: KHÔNG HIỆN HÀNH ĐỘNG SAI TRẠNG THÁI) */}
+      {validActionTabs.length === 0 && (
+        <p role="status">Hiện không có thao tác xử lý phù hợp với trạng thái và quyền của bạn.</p>
+      )}
       <div className="workflow-subnav-pills" role="tablist" aria-label="Các thao tác điều phối sự cố">
         {canShowTriage && (
           <button

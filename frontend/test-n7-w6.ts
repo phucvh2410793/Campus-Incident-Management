@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { MOCK_USERS } from './src/mocks/mock-users.ts'
 import { staffApiAdapter } from './src/api/staff-api-adapter.ts'
 import { demoClient } from './src/api/demo-client.ts'
+import { mockN7StaffRoleApi } from './src/mocks/n7-role-mock-api.ts'
 import type { Status } from './src/types/incident.ts'
 
 console.log('--- BẮT ĐẦU KIỂM THỬ TASK N7-W06: WORKFLOW ACTIONS & STATE-DRIVEN GUARDS (NGUYỄN NHẬT QUANG) ---\n')
@@ -382,6 +383,20 @@ try {
 }
 
 // 3.6 Backend chặn chuyển đổi trạng thái không hợp lệ (Invalid Transition 409)
+assert.equal(mockN7StaffRoleApi.getPermissionMatrix(inc, reporterUser).canViewInternalNotes, false)
+await assert.rejects(
+  mockN7StaffRoleApi.getStaffFullHistory(testIncidentId, reporterUser),
+  (err: unknown) => (err as { error?: { code?: string } }).error?.code === 'forbidden'
+)
+await assert.rejects(
+  mockN7StaffRoleApi.transitionStatus(
+    testIncidentId,
+    { expected_version: inc.version, target_status: 'resolved', resolution: 'Reporter không được xử lý' },
+    reporterUser
+  ),
+  (err: unknown) => (err as { error?: { code?: string } }).error?.code === 'forbidden'
+)
+
 // Đóng sự cố chính thức trước
 const closedIncident = await staffApiAdapter.closeIncident(
   testIncidentId,

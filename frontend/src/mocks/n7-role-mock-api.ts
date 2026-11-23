@@ -159,9 +159,10 @@ class N7StaffRoleMockApi {
   private canRead(incident: IncidentResponse, actor: UserSummary): boolean {
     if (actor.role === 'administrator') return true
     if (actor.role === 'reporter') return incident.reporter_id === actor.id
-    if (actor.role === 'handler') return incident.assigned_handler_id === actor.id
+    if (actor.role === 'handler') {
+      return incident.assigned_handler_id === actor.id && incident.department_id === actor.department_id
+    }
     if (actor.role === 'department_manager') {
-      if (actor.department_id === 'dept-triage') return incident.department_id === 'dept-triage' || incident.triage_required
       return incident.department_id === actor.department_id
     }
     return false
@@ -174,7 +175,12 @@ class N7StaffRoleMockApi {
   }
 
   private requireHandlerOrManager(incident: IncidentResponse, actor: UserSummary): void {
-    if (!this.canRead(incident, actor)) throw ErrorPresets.forbidden('thao tác ngoài phạm vi')
+    const canOperate = actor.role === 'administrator' ||
+      (actor.role === 'department_manager' && incident.department_id === actor.department_id) ||
+      (actor.role === 'handler' && incident.department_id === actor.department_id && incident.assigned_handler_id === actor.id)
+    if (!canOperate) {
+      throw ErrorPresets.forbidden('thao tác ngoài phạm vi')
+    }
   }
 
   /**
@@ -876,17 +882,18 @@ class N7StaffRoleMockApi {
    */
   getPermissionMatrix(incident: IncidentResponse, actor: UserSummary): PermissionStatus {
     const isReporter = incident.reporter_id === actor.id
-    const isAssignedHandler = incident.assigned_handler_id === actor.id
-    const isDepartmentManager = actor.role === 'department_manager' && (incident.department_id === actor.department_id || actor.department_id === 'dept-triage')
+    const isAssignedHandler = actor.role === 'handler' && incident.assigned_handler_id === actor.id && incident.department_id === actor.department_id
+    const isDepartmentManager = actor.role === 'department_manager' && incident.department_id === actor.department_id
     const isAdmin = actor.role === 'administrator'
 
-    const canViewInternalNotes = actor.role !== 'reporter'
-    const canAddInternalNotes = actor.role !== 'reporter'
-    const canAddPublicComments = true
+    const canOperate = isAssignedHandler || isDepartmentManager || isAdmin
+    const canViewInternalNotes = canOperate
+    const canAddInternalNotes = canOperate
+    const canAddPublicComments = this.canRead(incident, actor)
 
-    const canAcknowledge = (isAssignedHandler || isDepartmentManager || isAdmin) && incident.status === 'assigned'
+    const canAcknowledge = canOperate && incident.status === 'assigned'
     const canAssign = isDepartmentManager || isAdmin
-    const canResolve = (isAssignedHandler || isDepartmentManager || isAdmin) && incident.status === 'in_progress'
+    const canResolve = canOperate && incident.status === 'in_progress'
     const canClose = (isDepartmentManager || isAdmin) && incident.status === 'resolved'
     const canAdjustPriority = isDepartmentManager || isAdmin
 

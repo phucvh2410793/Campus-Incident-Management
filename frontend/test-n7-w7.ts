@@ -46,6 +46,29 @@ for (const item of handlerMetrics.overdueIncidents) {
 }
 console.log(`✓ Handler (${handlerMetrics.actorName}): Chỉ số liệu cá nhân (${handlerMetrics.totalIncidents} sự cố, ${handlerMetrics.overdueCount} quá hạn)`)
 
+// Một sự cố cùng handler nhưng khác bộ phận và event của đồng nghiệp không được cộng vào dashboard.
+const handler = MOCK_USERS['user-handler-csvc']
+const otherDepartmentIncident = {
+  ...INITIAL_MOCK_INCIDENTS[0],
+  id: 'cross-department-incident',
+  assigned_handler_id: handler.id,
+  department_id: 'dept-it',
+}
+const colleagueEvent = {
+  ...INITIAL_OUTBOX_EVENTS[0],
+  id: 'colleague-event',
+  incident_id: 'another-incident',
+  department_id: handler.department_id ?? 'dept-csvc',
+}
+const isolatedHandlerMetrics = calculateRoleDashboard(
+  handler,
+  [otherDepartmentIncident],
+  [colleagueEvent],
+  []
+)
+assert.equal(isolatedHandlerMetrics.totalIncidents, 0)
+assert.equal(isolatedHandlerMetrics.automationStats.totalEvents, 0)
+
 // 1.3 Department Manager CSVC (Hoàng Đức): Chỉ thấy sự cố trong bộ phận Cơ sở vật chất
 const managerCsvcMetrics = calculateRoleDashboard(
   MOCK_USERS['user-manager-csvc'],
