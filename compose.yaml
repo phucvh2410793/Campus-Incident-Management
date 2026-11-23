@@ -45,9 +45,12 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-campus}:${POSTGRES_PASSWORD:?Generate .env first}@postgres:5432/${POSTGRES_DB:-campus_incident_management}
+      EVIDENCE_DIR: /app/private_evidence
       CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - evidence_data:/app/private_evidence
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -102,3 +105,4 @@ services:
 volumes:
   postgres_data:
   n8n_data:
+  evidence_data:

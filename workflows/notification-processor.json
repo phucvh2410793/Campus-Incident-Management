@@ -1,0 +1,169 @@
+{
+  "name": "Campus Incident Management - Notification Processor & Test Email (N5 W6-W7)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notifications",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "name": "Webhook Notification Receiver",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "cim-notification-processor"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/internal/notifications/dispatch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event_id\": \"{{ $('Webhook Notification Receiver').item.json.body.event_id }}\",\n  \"scenario\": \"{{ $('Webhook Notification Receiver').item.json.body.scenario || 'reported' }}\",\n  \"recipient_user_id\": \"{{ $('Webhook Notification Receiver').item.json.body.recipient_user_id }}\",\n  \"recipient_email\": \"{{ $('Webhook Notification Receiver').item.json.body.recipient_email }}\",\n  \"incident_id\": \"{{ $('Webhook Notification Receiver').item.json.body.incident_id }}\",\n  \"category\": {{ JSON.stringify($('Webhook Notification Receiver').item.json.body.category || 'incident.reported') }},\n  \"department_name\": {{ JSON.stringify($('Webhook Notification Receiver').item.json.body.department_name || null) }},\n  \"priority\": {{ JSON.stringify($('Webhook Notification Receiver').item.json.body.priority || null) }},\n  \"reason\": {{ JSON.stringify($('Webhook Notification Receiver').item.json.body.reason || null) }}\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cim-internal-service-bearer",
+          "name": "CIM Internal Service Bearer"
+        }
+      },
+      "id": "5e6f7a8b-9c0d-1e2f-3a4b-5c6d7e8f9a0b",
+      "name": "Dispatch Safe Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d2e3f4a5-b6c7-8d9e-0f1a-2b3c4d5e6f7a",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "sent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c",
+      "name": "Delivery Sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"{{ $json.was_newly_sent ? 'sent' : 'skipped' }}\",\n  \"duplicate\": {{ ! $json.was_newly_sent }},\n  \"notification_id\": \"{{ $json.notification_id }}\",\n  \"provider_message_id\": \"{{ $json.provider_message_id }}\",\n  \"recipient_email\": \"{{ $json.recipient_email }}\",\n  \"subject\": \"{{ $json.subject }}\",\n  \"link\": \"{{ $json.link }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d",
+      "name": "Respond Delivery Sent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"{{ $json.status }}\",\n  \"notification_id\": \"{{ $json.notification_id }}\",\n  \"error_message\": \"{{ $json.error_message }}\",\n  \"recipient_email\": \"{{ $json.recipient_email }}\",\n  \"uncertain\": {{ $json.status === 'uncertain' }}\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
+      "name": "Respond Delivery Failed or Uncertain",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Notification Receiver": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Safe Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Safe Email": {
+      "main": [
+        [
+          {
+            "node": "Delivery Sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivery Sent?": {
+      "main": [
+        [
+          {
+            "node": "Respond Delivery Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Delivery Failed or Uncertain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "CIMNotificationProcessor001"
+}

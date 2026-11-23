@@ -70,8 +70,8 @@ class CommentService:
                     actor_id=prepared.actor_id,
                     action="comment.created",
                     request_id=request_id,
-                    before={"version": request.expected_version},
-                    after={"version": request.expected_version + 1},
+                    before={"status": incident.status, "version": request.expected_version},
+                    after={"status": incident.status, "version": request.expected_version + 1},
                 )
             )
             self.session.flush()
