@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.admin.router import router as admin_router
 from app.auth.errors import UnauthenticatedError, unauthenticated_response
 from app.auth.router import router as auth_router
 from app.automation.router import router as internal_router
@@ -40,6 +41,7 @@ app.add_exception_handler(UnauthenticatedError, unauthenticated_response)
 
 # Authentication routes: login and other auth endpoints.
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 # Internal service routes: n8n automation and callback endpoints (N5 ownership).
 app.include_router(internal_router)

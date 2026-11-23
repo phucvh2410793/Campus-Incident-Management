@@ -39,6 +39,7 @@ class User(Base):
 
 
 # Register all persistence models for Alembic autogeneration.
+from app.admin.models import AdminAuditLog as AdminAuditLog  # noqa: E402, F401
 from app.auth.models import Session as Session  # noqa: E402, F401
 from app.automation.models import Notification as Notification  # noqa: E402, F401
 from app.automation.models import OutboxEvent as OutboxEvent  # noqa: E402, F401
