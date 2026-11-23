@@ -329,3 +329,64 @@ class NotificationRepository:
 
     def get_notification(self, notification_id: uuid.UUID) -> Notification | None:
         return self.session.get(Notification, notification_id)
+
+    def list_notifications(
+        self,
+        status: str | None = None,
+        event_id: uuid.UUID | None = None,
+        limit: int = 50,
+        after_created_at: datetime | None = None,
+        after_id: uuid.UUID | None = None,
+    ) -> list[Notification]:
+        """List notifications with optional status and event filters and keyset pagination.
+
+        Allows administrators and audit jobs to trace failed, uncertain, or delivered notifications.
+        """
+        stmt = sa.select(Notification)
+        if status is not None:
+            stmt = stmt.where(Notification.status == status)
+        if event_id is not None:
+            stmt = stmt.where(Notification.event_id == event_id)
+
+        if after_created_at is not None and after_id is not None:
+            stmt = stmt.where(
+                sa.or_(
+                    Notification.created_at > after_created_at,
+                    sa.and_(
+                        Notification.created_at == after_created_at,
+                        Notification.id > after_id,
+                    ),
+                )
+            )
+
+        stmt = stmt.order_by(Notification.created_at.asc(), Notification.id.asc()).limit(limit)
+        return list(self.session.scalars(stmt).all())
+
+    def retry_notification_admin(
+        self,
+        notification_id: uuid.UUID,
+        reason: str,
+        now: datetime | None = None,
+    ) -> bool:
+        """Allow admins to re-queue a failed or uncertain notification with an explicit reason.
+
+        - If the notification is already 'sent', returns True idempotently (no duplicate send).
+        - If 'failed' or 'uncertain', resets to 'pending' with reason recorded in error_message.
+        """
+        if not reason or not reason.strip():
+            raise ValueError("Reason is required for admin notification retry")
+
+        current_time = now or _utc_now()
+        record = self.session.get(Notification, notification_id)
+        if not record:
+            return False
+
+        if record.status == "sent":
+            return True  # Idempotently accepted, do not re-send already sent email
+
+        record.status = "pending"
+        record.provider_message_id = None
+        record.error_message = f"Admin retry: {reason.strip()}"
+        record.updated_at = current_time
+        self.session.flush()
+        return True
