@@ -5,8 +5,10 @@ Acceptance criteria:
 - W7: Lỗi giữa chừng truy vết được; uncertain không tự gửi lại.
 """
 
+import json
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -367,6 +369,15 @@ def test_dispatch_notification_endpoint_api(client: TestClient, db_session: Sess
     assert dup_res.status_code == 200
     assert dup_res.json()["was_newly_sent"] is False
     assert dup_res.json()["notification_id"] == data["notification_id"]
+
+
+def test_notification_workflow_dispatches_without_preclaim():
+    """The n8n path must let dispatch own the claim, or it would always skip sending."""
+    path = Path(__file__).parents[2] / "workflows" / "notification-processor.json"
+    workflow = json.loads(path.read_text(encoding="utf-8"))
+    links = workflow["connections"]["Webhook Notification Receiver"]["main"][0]
+    assert [link["node"] for link in links] == ["Dispatch Safe Email"]
+    assert all(node["name"] != "Claim Notification Task" for node in workflow["nodes"])
 
 
 # ===========================================================================

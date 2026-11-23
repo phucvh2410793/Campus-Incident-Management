@@ -108,9 +108,7 @@ Acceptance test tự động của W5 nằm ở `backend/tests/test_automation_w
 `notification-processor.json` tiếp nhận yêu cầu gửi thông báo cho 3 kịch bản: **báo cáo (reported)**, **phân công (assigned)** và **khẩn cấp (P1)**:
 
 - **Webhook Notification Receiver**: nhận POST tại path `notifications` (`http://localhost:5678/webhook/notifications`).
-- **Claim Notification Task**: gọi `POST /internal/notifications/claim` với khóa idempotency `(event_id, kind, recipient_user_id)`.
-- **Should Send Email?**: kiểm tra flag `should_send`. Nếu notification đã tồn tại, workflow trả `status=skipped` và không gửi email trùng (chống nhân đôi thông báo).
-- **Dispatch Safe Email**: gọi `POST /internal/notifications/dispatch` để định dạng và gửi email thử nghiệm:
+- **Dispatch Safe Email**: gọi `POST /internal/notifications/dispatch`. Backend tự claim bằng khóa `(event_id, kind, recipient_user_id)`, rồi định dạng và gửi email thử nghiệm. Gọi lại cùng khóa trả `status=skipped` và không gửi trùng:
   - Báo cáo: gửi đến người báo kèm link công khai `/incidents/{id}`.
   - Phân công: gửi đến kỹ thuật viên kèm link `/staff/incidents/{id}`.
   - P1: gửi đến quản lý kèm cảnh báo khẩn cấp và deadline SLA.

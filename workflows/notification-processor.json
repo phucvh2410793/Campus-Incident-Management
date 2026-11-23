@@ -13,82 +13,11 @@
       "name": "Webhook Notification Receiver",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "cim-notification-processor"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=http://backend:8000/internal/notifications/claim",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "contentType": "json",
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"event_id\": \"{{ $('Webhook Notification Receiver').item.json.body.event_id }}\",\n  \"kind\": \"{{ $('Webhook Notification Receiver').item.json.body.kind || 'incident_reported' }}\",\n  \"recipient_user_id\": \"{{ $('Webhook Notification Receiver').item.json.body.recipient_user_id }}\"\n}",
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true,
-              "responseFormat": "json"
-            }
-          }
-        }
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "cim-internal-service-bearer",
-          "name": "CIM Internal Service Bearer"
-        }
-      },
-      "id": "2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
-      "name": "Claim Notification Task",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [240, 0]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "c1d2e3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f",
-              "leftValue": "={{ $json.should_send }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
-      },
-      "id": "3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f",
-      "name": "Should Send Email?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [480, 0]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"status\": \"skipped\",\n  \"duplicate\": true,\n  \"notification_id\": \"{{ $json.notification_id }}\",\n  \"message\": \"Notification already claimed; duplicate email delivery skipped (idempotent)\"\n}",
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
-      "name": "Respond Skipped (Idempotent)",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [720, -120]
     },
     {
       "parameters": {
@@ -119,7 +48,10 @@
       "name": "Dispatch Safe Email",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [720, 120]
+      "position": [
+        720,
+        120
+      ]
     },
     {
       "parameters": {
@@ -148,12 +80,15 @@
       "name": "Delivery Sent?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [960, 120]
+      "position": [
+        960,
+        120
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"status\": \"sent\",\n  \"notification_id\": \"{{ $json.notification_id }}\",\n  \"provider_message_id\": \"{{ $json.provider_message_id }}\",\n  \"recipient_email\": \"{{ $json.recipient_email }}\",\n  \"subject\": \"{{ $json.subject }}\",\n  \"link\": \"{{ $json.link }}\"\n}",
+        "responseBody": "={\n  \"status\": \"{{ $json.was_newly_sent ? 'sent' : 'skipped' }}\",\n  \"duplicate\": {{ ! $json.was_newly_sent }},\n  \"notification_id\": \"{{ $json.notification_id }}\",\n  \"provider_message_id\": \"{{ $json.provider_message_id }}\",\n  \"recipient_email\": \"{{ $json.recipient_email }}\",\n  \"subject\": \"{{ $json.subject }}\",\n  \"link\": \"{{ $json.link }}\"\n}",
         "options": {
           "responseCode": 200
         }
@@ -162,7 +97,10 @@
       "name": "Respond Delivery Sent",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1200, 40]
+      "position": [
+        1200,
+        40
+      ]
     },
     {
       "parameters": {
@@ -176,7 +114,10 @@
       "name": "Respond Delivery Failed or Uncertain",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1200, 200]
+      "position": [
+        1200,
+        200
+      ]
     }
   ],
   "connections": {
@@ -184,36 +125,7 @@
       "main": [
         [
           {
-            "node": "Claim Notification Task",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Claim Notification Task": {
-      "main": [
-        [
-          {
-            "node": "Should Send Email?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Should Send Email?": {
-      "main": [
-        [
-          {
             "node": "Dispatch Safe Email",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond Skipped (Idempotent)",
             "type": "main",
             "index": 0
           }
