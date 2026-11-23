@@ -1,9 +1,8 @@
 """Standalone W1 contracts, independent of authentication and incident models."""
 
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 

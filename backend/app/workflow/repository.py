@@ -24,7 +24,15 @@ class WorkflowRepository:
 
     def add_audit(self, audit: AuditLog) -> None:
         # Only structured workflow metadata; never comment/file bodies or secrets.
-        allowed = {"status","department_id","assigned_handler_id","version","priority","acknowledgment_deadline_at","reason",}
+        allowed = {
+            "status",
+            "department_id",
+            "assigned_handler_id",
+            "version",
+            "priority",
+            "acknowledgment_deadline_at",
+            "reason",
+        }
         for values in (audit.before, audit.after):
             if set(values) - allowed:
                 raise ValueError("Unsupported audit fields")

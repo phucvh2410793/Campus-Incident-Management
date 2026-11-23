@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db
 from app.auth.policy import Principal, get_principal
-from app.workflow.contracts import AcknowledgeRequest, AssignRequest, PriorityChangeRequest, WorkflowViolation
+from app.workflow.contracts import (
+    AcknowledgeRequest,
+    AssignRequest,
+    PriorityChangeRequest,
+    WorkflowViolation,
+)
 from app.workflow.schemas import AssignmentResponse, PriorityChangeResponse
 from app.workflow.service import (
     AcknowledgmentService,
@@ -115,6 +120,7 @@ def acknowledge_incident(
     except Exception:
         db.rollback()
         raise
+
 
 @router.post("/{incident_id}/priority", response_model=PriorityChangeResponse)
 def change_incident_priority(

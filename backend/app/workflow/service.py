@@ -13,12 +13,16 @@ from app.automation.schemas import EventType
 from app.incidents.models import Incident
 from app.models import Department, User
 from app.rules.engine import MANUAL_QUEUE
-from app.workflow.contracts import AcknowledgeRequest, AssignRequest, WorkflowViolation
+from app.sla.policy import calculate_deadline
+from app.workflow.contracts import (
+    AcknowledgeRequest,
+    AssignRequest,
+    PriorityChangeRequest,
+    WorkflowViolation,
+)
 from app.workflow.models import Assignment, AuditLog, StatusHistory
 from app.workflow.repository import WorkflowRepository
 from app.workflow.schemas import AssignmentIncident, AssignmentResponse
-from app.sla.policy import calculate_deadline
-from app.workflow.contracts import PriorityChangeRequest
 
 
 def assignment_snapshot(incident: Incident) -> dict:
@@ -31,6 +35,7 @@ def assignment_snapshot(incident: Incident) -> dict:
         ),
     }
 
+
 def priority_snapshot(incident: Incident) -> dict:
     deadline = incident.acknowledgment_deadline_at
     return {
@@ -38,6 +43,7 @@ def priority_snapshot(incident: Incident) -> dict:
         "acknowledgment_deadline_at": deadline.isoformat() if deadline else None,
         "version": incident.version,
     }
+
 
 class AssignmentService:
     def __init__(self, session: Session):
@@ -258,6 +264,7 @@ class AcknowledgmentService:
                 history_id=history.id,
             )
         return response
+
 
 class PriorityChangeService:
     def __init__(self, session: Session):

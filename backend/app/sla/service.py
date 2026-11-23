@@ -11,7 +11,6 @@ from app.sla.clock import require_utc
 from app.sla.models import Escalation
 from app.sla.policy import calculate_deadline
 
-
 ESCALATION_REASON = "Acknowledgement SLA exceeded"
 
 
