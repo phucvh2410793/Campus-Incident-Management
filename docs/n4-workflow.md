@@ -108,3 +108,42 @@ router. No migration is required. Tests: `python -m pytest tests/test_acknowledg
 from backend with project dependencies installed. SQLite tests cover service/API behavior,
 UTC clocks, repeated calls, conditional updates and rollback. Real PostgreSQL parallel
 requests and race with the SLA job require later integration verification (N3/N4 W7).
+
+## W6 transitions and disposition
+
+Endpoints: `POST /api/v1/incidents/{incident_id}/transitions` and
+`POST /api/v1/incidents/{incident_id}/disposition`. Both take `expected_version`
+(a positive integer) and reuse the existing `{incident, history_id}` command
+envelope; the route commits once and rolls back on failure. No outbox event is
+published: EventType has no transition or disposition event, same as W5
+acknowledgment.
+
+Transitions use the four edges already listed in the contract table above:
+`in_progress -> resolved` (handler, manager or administrator, nonempty
+`resolution` required), `resolved -> closed` (manager or administrator, `reason`
+optional), `resolved -> in_progress` and `closed -> in_progress` (manager or
+administrator, `reason` required). Any other edge returns 409
+invalid_transition; a missing resolution or reason returns 422
+validation_error. `resolved_at` is set when resolving and `closed_at` when
+closing; returning or reopening keeps both timestamps and the old history,
+and reopen does not create a new acknowledgment deadline.
+
+Disposition closes an incident as `duplicate` or `invalid`; it never deletes
+one. Only the current department manager or administrator can dispose; the
+assigned handler gets 403. The incident must not already be `closed` (409).
+`reason` is always required; `duplicate` additionally requires
+`duplicate_of_id`, which must exist and must not be the incident itself (422
+otherwise). The audit `after` snapshot records the disposition kind and
+`duplicate_of_id`; `WorkflowRepository.add_audit` now allows those two fields
+and validates them the same way it validates status and version.
+
+Code: TransitionService and DispositionService in
+backend/app/workflow/service.py, the two routes in backend/app/workflow/router.py,
+and the audit allowlist in backend/app/workflow/repository.py. No migration is
+required. Tests: `python -m pytest tests/test_transitions.py -q` from backend
+with project dependencies installed. SQLite tests cover the four transition
+edges, role and version handling, reopen timestamp retention, duplicate/invalid
+disposition, endpoint validation, authentication, record scope and rollback;
+45 cases. Together with the existing workflow tests the suite is 215 passed.
+Real PostgreSQL parallel requests still require later integration verification
+(N3/N4 W7).
