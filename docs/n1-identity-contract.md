@@ -79,3 +79,16 @@ Các API này yêu cầu bearer token của `administrator`; tài khoản khác 
 Mật khẩu demo được nhập lúc gọi `POST /users` (ví dụ trong Swagger hoặc từ biến môi trường của máy), không ghi vào Git, URL, log hoặc tài liệu. Tạo user bằng API thay cho sửa DB bằng tay; dùng `PATCH /users/{id}` với `is_active=false` để khóa và thử token cũ trả 401. Admin vẫn dùng các API incident chung để xem và phân công sự cố ở mọi bộ phận; test W6 kiểm tra qua API thật.
 
 Rule version mới được lưu với `is_active=false`: bộ đánh giá N3 hiện vẫn dùng `demo-v1` trong mã nguồn, chưa đọc rule mới từ DB. Vì vậy API W6 quản lý phiên bản để xem xét, **chưa kích hoạt quy tắc mới trong luồng phân loại**. Các API admin event lỗi/retry thuộc N5 và không nằm trong phần N1 W6.
+
+## Tích hợp quyền W7
+
+W7 dùng `IncidentPolicy` thống nhất tại các điểm đã có API:
+
+- GET danh sách/chi tiết incident áp dụng cùng phạm vi owner, department và assignment; phần dữ liệu staff trong chi tiết cũng dùng `can_operate`, không lặp lại điều kiện role riêng.
+- POST assign/acknowledge vẫn kiểm tra quyền trước version và trạng thái. API comment mới là adapter cho `CommentService` N4: GET lọc public/internal ngay trong truy vấn; POST kiểm tra quyền, expected_version và ghi comment/audit trong cùng transaction.
+- Một staff tự tạo báo cáo vẫn xem được báo cáo và comment công khai; nếu không thuộc nhóm xử lý của báo cáo thì không được đọc hoặc viết comment nội bộ.
+- Router file N2 dùng `IncidentPolicy` để kiểm tra phạm vi incident. `IncidentRoute` chuyển lỗi quyền từ service thành response 403/404 đúng contract; download ID file thuộc incident khác trả 404.
+
+Test W7 gọi API thật trên PostgreSQL với reporter, handler, manager và administrator ở hai bộ phận. Ngoài phạm vi xem trả 404; đã được xem nhưng thiếu quyền thao tác trả 403. Sau khi chuyển bộ phận/handler, quyền cũ mất và quyền mới có hiệu lực; nội dung comment internal không lộ cho owner chỉ có quyền xem. Sau khi gộp N2 W6–W7 và N4 W7, chạy lại các test upload/list/download, supplement/history, transition, audit và cập nhật đồng thời trên PostgreSQL.
+
+Chạy lại ma trận quyền W7 trên các endpoint N2 và N4 sau khi các PR liên quan được gộp.

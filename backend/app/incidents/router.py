@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import get_db
-from app.auth.policy import Principal, get_principal, require_permission
+from app.auth.policy import IncidentPolicy, Principal, get_principal, require_permission
 from app.incidents.models import Incident
 from app.incidents.schemas import (
     IncidentCreateRequest,
@@ -40,6 +40,13 @@ class IncidentRoute(APIRoute):
         async def handle(request: Request):
             try:
                 return await original(request)
+            except WorkflowViolation as exc:
+                return error_response(
+                    exc.http_status,
+                    exc.code,
+                    exc.code.replace("_", " ").capitalize(),
+                    _request_id(request),
+                )
             except RequestValidationError as exc:
                 details = [
                     {"field": ".".join(map(str, error["loc"])), "reason": error["type"]}
@@ -210,11 +217,5 @@ def get_incident(
         return error_response(404, "not_found", "Incident not found", _request_id(request))
     response.headers["X-Request-ID"] = str(_request_id(request))
     result = IncidentResponse.model_validate(incident)
-    staff_scope = (
-        principal.role == "administrator"
-        or principal.role == "handler"
-        and str(incident.assigned_handler_id) == principal.user_id
-        or principal.role == "department_manager"
-        and str(incident.department_id) == principal.department_id
-    )
+    staff_scope = IncidentPolicy().can_operate(principal, incident)
     return result if staff_scope else result.model_copy(update={"assigned_handler_id": None})
