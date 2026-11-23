@@ -117,7 +117,7 @@ export function ReporterCreateIncident({ onIncidentCreated, onCancel }: Reporter
         file,
         name: file.name,
         sizeBytes: file.size,
-        mimeType: file.type || 'image/png',
+        mimeType: file.type || 'application/octet-stream',
         signature: file.type === 'application/pdf' ? [37, 80, 68, 70, 45] :
                    file.type === 'image/png' ? [137, 80, 78, 71, 13, 10, 26, 10] : [255, 216, 255],
         simulateError: 'none',
@@ -313,7 +313,9 @@ export function ReporterCreateIncident({ onIncidentCreated, onCancel }: Reporter
             filename: fileItem.name,
             sizeBytes: fileItem.sizeBytes,
             mimeType: fileItem.mimeType,
-            signature: fileItem.signature,
+            signature: fileItem.file
+              ? Array.from(new Uint8Array(await fileItem.file.slice(0, 8).arrayBuffer()))
+              : fileItem.signature,
           },
           currentVersion
         )
@@ -367,27 +369,39 @@ export function ReporterCreateIncident({ onIncidentCreated, onCancel }: Reporter
   }
 
   // --- RETRY FAILED FILE INDIVIDUALLY ---
-  const handleRetryFile = async (item: UploadProgressItem) => {
+  const handleRetryFile = async (item: UploadProgressItem, replacement?: File) => {
     if (!createdIncident || isRetryingFileId) return
+    const originalFile = selectedFiles.find((file) => file.id === item.id)
+    if (!originalFile) return
+
+    const fileToUpload: SelectedFileItem = replacement
+      ? {
+          id: item.id,
+          file: replacement,
+          name: replacement.name,
+          sizeBytes: replacement.size,
+          mimeType: replacement.type || 'application/octet-stream',
+        }
+      : originalFile
+    if (replacement) {
+      setSelectedFiles((prev) => prev.map((file) => file.id === item.id ? fileToUpload : file))
+    }
 
     setIsRetryingFileId(item.id)
     setUploadProgress((prev) =>
-      prev.map((p) => (p.id === item.id ? { ...p, status: 'uploading', errorReason: undefined } : p))
+      prev.map((p) => (p.id === item.id ? { ...p, status: 'uploading', errorReason: undefined, errorCode: undefined } : p))
     )
 
     try {
-      // Giả sử retry với kích thước chuẩn 1MB nếu trước đó giả lập quá dung lượng
-      const adjustedSize = item.sizeBytes > 10 * 1024 * 1024 ? 1.5 * 1024 * 1024 : item.sizeBytes
-      const adjustedMime = item.mimeType.includes('msdownload') ? 'application/pdf' : item.mimeType
-      const adjustedSig = adjustedMime === 'application/pdf' ? [37, 80, 68, 70, 45] : [255, 216, 255]
-
       const att = await demoClient.uploadAttachment(
         createdIncident.id,
         {
-          filename: item.name.replace(/\.exe$/, '.pdf'),
-          sizeBytes: adjustedSize,
-          mimeType: adjustedMime,
-          signature: adjustedSig,
+          filename: fileToUpload.name,
+          sizeBytes: fileToUpload.sizeBytes,
+          mimeType: fileToUpload.mimeType,
+          signature: fileToUpload.file
+            ? Array.from(new Uint8Array(await fileToUpload.file.slice(0, 8).arrayBuffer()))
+            : fileToUpload.signature,
         },
         createdIncident.version
       )
@@ -400,8 +414,9 @@ export function ReporterCreateIncident({ onIncidentCreated, onCancel }: Reporter
             ? {
                 ...p,
                 status: 'success',
-                sizeBytes: adjustedSize,
-                mimeType: adjustedMime,
+                name: fileToUpload.name,
+                sizeBytes: fileToUpload.sizeBytes,
+                mimeType: fileToUpload.mimeType,
                 attachment: att,
                 errorReason: undefined,
               }
@@ -409,14 +424,22 @@ export function ReporterCreateIncident({ onIncidentCreated, onCancel }: Reporter
         )
       )
     } catch (err: unknown) {
-      const contractErr = err as { error?: { message?: string; details?: Array<{ field: string; reason: string }> } }
+      const contractErr = err as { error?: { code?: string; message?: string; details?: Array<{ field: string; reason: string }> } }
       const reason =
         contractErr?.error?.details?.[0]?.reason ||
         contractErr?.error?.message ||
         'Tải lại thất bại.'
 
       setUploadProgress((prev) =>
-        prev.map((p) => (p.id === item.id ? { ...p, status: 'error', errorReason: reason } : p))
+        prev.map((p) => (p.id === item.id ? {
+          ...p,
+          name: fileToUpload.name,
+          sizeBytes: fileToUpload.sizeBytes,
+          mimeType: fileToUpload.mimeType,
+          status: 'error',
+          errorCode: contractErr?.error?.code || 'upload_failed',
+          errorReason: reason,
+        } : p))
       )
     } finally {
       setIsRetryingFileId(null)
@@ -447,7 +470,7 @@ export function ReporterCreateIncident({ onIncidentCreated, onCancel }: Reporter
                 <p>
                   <strong>KHÔNG THÀNH CÔNG TOÀN BỘ:</strong> Báo cáo sự cố đã được ghi nhận vào hệ thống với mã{' '}
                   <code>{createdIncident.id}</code> (Phiên bản v{createdIncident.version}). Tuy nhiên, một số tệp đính kèm đã bị từ chối
-                  theo hợp đồng kiểm soát dữ liệu. Vui lòng kiểm tra lý do lỗi cụ thể bên dưới hoặc nhấn nút thử tải lại.
+                  theo hợp đồng kiểm soát dữ liệu. Kiểm tra lý do bên dưới; nếu tệp không hợp lệ, hãy chọn tệp khác.
                 </p>
               </div>
             </div>
@@ -531,14 +554,27 @@ export function ReporterCreateIncident({ onIncidentCreated, onCancel }: Reporter
                       </td>
                       <td>
                         {item.status === 'error' && (
-                          <button
-                            type="button"
-                            className="btn-retry-file"
-                            disabled={isRetryingFileId === item.id}
-                            onClick={() => handleRetryFile(item)}
-                          >
-                            {isRetryingFileId === item.id ? 'Đang thử lại…' : '🔄 Thử tải lại'}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="btn-retry-file"
+                              disabled={isRetryingFileId === item.id}
+                              onClick={() => handleRetryFile(item)}
+                            >
+                              {isRetryingFileId === item.id ? 'Đang thử lại…' : '🔄 Thử tải lại'}
+                            </button>
+                            <input
+                              type="file"
+                              aria-label={`Chọn tệp thay cho ${item.name}`}
+                              accept="image/png,image/jpeg,application/pdf"
+                              disabled={isRetryingFileId === item.id}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                if (file) void handleRetryFile(item, file)
+                                event.target.value = ''
+                              }}
+                            />
+                          </>
                         )}
                         {item.status === 'success' && (
                           <span style={{ color: 'var(--success)', fontSize: '0.85rem' }}>✓ Đã lưu</span>
