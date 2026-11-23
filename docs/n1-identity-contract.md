@@ -62,15 +62,33 @@ Hàm `lock_user` đặt `is_active=false` và thu hồi mọi session trong cùn
 
 Quyền theo từng thao tác và điều kiện trạng thái nằm trong [API contract](api-contract.md#quyền-theo-hành-động). [principals.json](fixtures/principals.json) có ID mẫu cho bốn role, bốn department và manager của `triage_queue`. File này dùng cho test/mock, không chứa mật khẩu hoặc token. `IncidentPolicy` xử lý phạm vi và quyền action; các service vẫn kiểm tra version, trạng thái và audit trước khi ghi.
 
+## Quản trị tối thiểu W6
+
+Nhánh `n1/w6-admin-management` bổ sung API `/api/v1/admin/*` cho administrator:
+
+| API | Tác dụng |
+| --- | --- |
+| `GET /users` | Xem tài khoản theo `role`, `department_id`, `is_active`; phân trang bằng `limit` và cursor UUID. |
+| `POST /users` | Tạo tài khoản và băm mật khẩu từ request; không trả mật khẩu hoặc hash. Handler/manager phải thuộc bộ phận có thật. |
+| `PATCH /users/{id}` | Đổi role, bộ phận hoặc trạng thái hoạt động. Khóa user và đổi role/bộ phận thu hồi các session cũ. Không cho admin tự khóa hoặc tự bỏ role admin. |
+| `GET/POST /departments` | Xem và thêm bộ phận, từ chối tên trùng. |
+| `GET /rules`, `POST /rules/versions` | Xem và thêm phiên bản rule bất biến; kiểm tra category, condition, bộ phận đích và rule ID trùng. |
+
+Các API này yêu cầu bearer token của `administrator`; tài khoản khác nhận 403. Tạo/sửa user, tạo bộ phận và rule version ghi `admin_audit_logs` cùng transaction với thay đổi. Audit có actor, action, target, request ID và snapshot trước/sau, nhưng không lưu mật khẩu hay token. Nếu transaction thất bại thì audit và thay đổi đều rollback.
+
+Mật khẩu demo được nhập lúc gọi `POST /users` (ví dụ trong Swagger hoặc từ biến môi trường của máy), không ghi vào Git, URL, log hoặc tài liệu. Tạo user bằng API thay cho sửa DB bằng tay; dùng `PATCH /users/{id}` với `is_active=false` để khóa và thử token cũ trả 401. Admin vẫn dùng các API incident chung để xem và phân công sự cố ở mọi bộ phận; test W6 kiểm tra qua API thật.
+
+Rule version mới được lưu với `is_active=false`: bộ đánh giá N3 hiện vẫn dùng `demo-v1` trong mã nguồn, chưa đọc rule mới từ DB. Vì vậy API W6 quản lý phiên bản để xem xét, **chưa kích hoạt quy tắc mới trong luồng phân loại**. Các API admin event lỗi/retry thuộc N5 và không nằm trong phần N1 W6.
+
 ## Tích hợp quyền W7
 
-Nhánh `n1/w7-policy-integration` dùng `IncidentPolicy` thống nhất tại các điểm đã có API:
+W7 dùng `IncidentPolicy` thống nhất tại các điểm đã có API:
 
 - GET danh sách/chi tiết incident áp dụng cùng phạm vi owner, department và assignment; phần dữ liệu staff trong chi tiết cũng dùng `can_operate`, không lặp lại điều kiện role riêng.
 - POST assign/acknowledge vẫn kiểm tra quyền trước version và trạng thái. API comment mới là adapter cho `CommentService` N4: GET lọc public/internal ngay trong truy vấn; POST kiểm tra quyền, expected_version và ghi comment/audit trong cùng transaction.
 - Một staff tự tạo báo cáo vẫn xem được báo cáo và comment công khai; nếu không thuộc nhóm xử lý của báo cáo thì không được đọc hoặc viết comment nội bộ.
 - Router file N2 dùng `IncidentPolicy` để kiểm tra phạm vi incident. `IncidentRoute` chuyển lỗi quyền từ service thành response 403/404 đúng contract; download ID file thuộc incident khác trả 404.
 
-Test W7 gọi API thật trên PostgreSQL với reporter, handler, manager và administrator ở hai bộ phận. Ngoài phạm vi xem trả 404; đã được xem nhưng thiếu quyền thao tác trả 403. Sau khi chuyển bộ phận/handler, quyền cũ mất và quyền mới có hiệu lực; nội dung comment internal không lộ cho owner chỉ có quyền xem. Toàn bộ backend trên bản ghép tạm với N2 W6–W7 và N4 W7, schema PostgreSQL riêng, đạt 541 test (không bỏ qua); gồm upload/list/download, supplement/history, transition, audit và cập nhật đồng thời. Trên nhánh W7 dựa vào `main` hiện tại, ba test phụ thuộc router N2/N4 tự bỏ qua cho đến khi các router này được gộp.
+Test W7 gọi API thật trên PostgreSQL với reporter, handler, manager và administrator ở hai bộ phận. Ngoài phạm vi xem trả 404; đã được xem nhưng thiếu quyền thao tác trả 403. Sau khi chuyển bộ phận/handler, quyền cũ mất và quyền mới có hiệu lực; nội dung comment internal không lộ cho owner chỉ có quyền xem. Sau khi gộp N2 W6–W7 và N4 W7, chạy lại các test upload/list/download, supplement/history, transition, audit và cập nhật đồng thời trên PostgreSQL.
 
-Router upload/list/download file và supplement/history chưa có trên `main` tại thời điểm làm nhánh này, nhưng nhánh N2 W6–W7 đã có API để kiểm tra tích hợp. N4 W7 cũng có các transition, audit và kiểm thử cập nhật đồng thời trên nhánh riêng. Sau khi các nhánh đó được gộp, cần chạy lại ma trận quyền W7 trên từng endpoint mới trước khi coi mốc tích hợp đầy đủ hoàn thành.
+Chạy lại ma trận quyền W7 trên các endpoint N2 và N4 sau khi các PR liên quan được gộp.
