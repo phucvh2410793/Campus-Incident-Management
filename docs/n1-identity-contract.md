@@ -61,3 +61,21 @@ Hàm `lock_user` đặt `is_active=false` và thu hồi mọi session trong cùn
 `IncidentPolicy` cho mọi user thấy báo cáo do chính mình tạo; handler còn thấy incident đang được giao **và** thuộc bộ phận của mình, manager thấy incident thuộc bộ phận mình, administrator thấy mọi incident. Quyền sở hữu chỉ cho xem, comment công khai và evidence; quyền comment nội bộ/xử lý cần đúng phạm vi tác nghiệp. Nếu ở ngoài phạm vi xem, action trả `404 not_found` để che sự tồn tại bản ghi; nếu đã thấy incident nhưng không được làm action thì trả `403 forbidden`. Người không có quyền tác nghiệp không đọc được comment nội bộ (`404`). Assignment chỉ cho manager trong bộ phận hiện tại hoặc administrator, kể cả khi manager là người báo. Khi đổi assignment/bộ phận, policy dùng dữ liệu incident mới nên quyền tác nghiệp cũ mất hiệu lực.
 
 Quyền theo từng thao tác và điều kiện trạng thái nằm trong [API contract](api-contract.md#quyền-theo-hành-động). [principals.json](fixtures/principals.json) có ID mẫu cho bốn role, bốn department và manager của `triage_queue`. File này dùng cho test/mock, không chứa mật khẩu hoặc token. `IncidentPolicy` xử lý phạm vi và quyền action; các service vẫn kiểm tra version, trạng thái và audit trước khi ghi.
+
+## Quản trị tối thiểu W6
+
+Nhánh `n1/w6-admin-management` bổ sung API `/api/v1/admin/*` cho administrator:
+
+| API | Tác dụng |
+| --- | --- |
+| `GET /users` | Xem tài khoản theo `role`, `department_id`, `is_active`; phân trang bằng `limit` và cursor UUID. |
+| `POST /users` | Tạo tài khoản và băm mật khẩu từ request; không trả mật khẩu hoặc hash. Handler/manager phải thuộc bộ phận có thật. |
+| `PATCH /users/{id}` | Đổi role, bộ phận hoặc trạng thái hoạt động. Khóa user và đổi role/bộ phận thu hồi các session cũ. Không cho admin tự khóa hoặc tự bỏ role admin. |
+| `GET/POST /departments` | Xem và thêm bộ phận, từ chối tên trùng. |
+| `GET /rules`, `POST /rules/versions` | Xem và thêm phiên bản rule bất biến; kiểm tra category, condition, bộ phận đích và rule ID trùng. |
+
+Các API này yêu cầu bearer token của `administrator`; tài khoản khác nhận 403. Tạo/sửa user, tạo bộ phận và rule version ghi `admin_audit_logs` cùng transaction với thay đổi. Audit có actor, action, target, request ID và snapshot trước/sau, nhưng không lưu mật khẩu hay token. Nếu transaction thất bại thì audit và thay đổi đều rollback.
+
+Mật khẩu demo được nhập lúc gọi `POST /users` (ví dụ trong Swagger hoặc từ biến môi trường của máy), không ghi vào Git, URL, log hoặc tài liệu. Tạo user bằng API thay cho sửa DB bằng tay; dùng `PATCH /users/{id}` với `is_active=false` để khóa và thử token cũ trả 401. Admin vẫn dùng các API incident chung để xem và phân công sự cố ở mọi bộ phận; test W6 kiểm tra qua API thật.
+
+Rule version mới được lưu với `is_active=false`: bộ đánh giá N3 hiện vẫn dùng `demo-v1` trong mã nguồn, chưa đọc rule mới từ DB. Vì vậy API W6 quản lý phiên bản để xem xét, **chưa kích hoạt quy tắc mới trong luồng phân loại**. Các API admin event lỗi/retry thuộc N5 và không nằm trong phần N1 W6.

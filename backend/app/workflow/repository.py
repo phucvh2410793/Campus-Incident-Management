@@ -32,6 +32,8 @@ class WorkflowRepository:
             "priority",
             "acknowledgment_deadline_at",
             "reason",
+            "disposition",
+            "duplicate_of_id",
         }
         for values in (audit.before, audit.after):
             if set(values) - allowed:
@@ -56,6 +58,10 @@ class WorkflowRepository:
                 if key == "acknowledgment_deadline_at" and value is not None:
                     if not isinstance(value, str):
                         raise ValueError("Invalid audit deadline")
+                if key == "disposition" and value not in {"duplicate", "invalid"}:
+                    raise ValueError("Invalid audit disposition")
+                if key == "duplicate_of_id" and value is not None:
+                    UUID(value)
         self.session.add(audit)
 
     def list_assignments(self, incident_id: UUID, *, limit: int = 20, offset: int = 0):

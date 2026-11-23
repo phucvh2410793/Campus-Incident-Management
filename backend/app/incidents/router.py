@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -29,6 +30,7 @@ from app.incidents.service import (
     list_incidents,
     visible_incidents,
 )
+from app.workflow.contracts import WorkflowViolation
 
 
 class IncidentRoute(APIRoute):
@@ -45,6 +47,14 @@ class IncidentRoute(APIRoute):
                 ]
                 return error_response(
                     422, "validation_error", "Invalid request", _request_id(request), details
+                )
+            except WorkflowViolation as exc:
+                return error_response(
+                    exc.http_status, exc.code, exc.code.replace("_", " "), _request_id(request)
+                )
+            except SQLAlchemyError:
+                return error_response(
+                    503, "service_unavailable", "Database unavailable", _request_id(request)
                 )
 
         return handle
