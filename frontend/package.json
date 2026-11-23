@@ -6,6 +6,8 @@
   "scripts": {
     "test:n7": "node --experimental-strip-types test-n7-w4.ts",
     "test:n7:w5": "node --experimental-strip-types test-n7-w5.ts",
+    "test:n7:w6": "node --experimental-strip-types test-n7-w6.ts",
+    "test:n7:w7": "node --experimental-strip-types test-n7-w7.ts",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
