@@ -135,6 +135,7 @@ def test_review_deadline_requires_utc_aware_time():
     with pytest.raises(ValueError):
         calculate_review_deadline(datetime(2026, 11, 2, 9, 30))
 
+
 @pytest.mark.parametrize(
     ("priority", "duration"),
     [
@@ -163,9 +164,15 @@ def test_escalation_boundary_with_fake_clock(priority, duration, offset, expecte
     )
 
     assert result is expected
+
+
 def test_fake_clock_normalizes_timezone_to_utc():
     local_time = datetime(
-        2026, 11, 2, 16, 30,
+        2026,
+        11,
+        2,
+        16,
+        30,
         tzinfo=timezone(timedelta(hours=7)),
     )
 

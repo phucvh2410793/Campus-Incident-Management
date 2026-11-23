@@ -232,10 +232,11 @@ def test_concurrent_disposition_only_one_wins(pg_case):
 
 
 def test_concurrent_assign_only_one_wins(pg_case):
-    # Incident starts reported; both threads assign to the same target.
+    # An administrator keeps record access after the department changes, so
+    # the losing request can be checked specifically for a stale version.
     def assign(session):
         return AssignmentService(session).assign(
-            pg_case.users["manager"],
+            pg_case.users["admin"],
             pg_case.incident_id,
             AssignRequest(
                 department_id=pg_case.target,
