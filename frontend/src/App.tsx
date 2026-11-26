@@ -1,100 +1,36 @@
-import { useEffect, useState } from 'react'
-import './App.css'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Activity, ArrowRight, CircleHelp, ClipboardList, Inbox, LayoutDashboard, LogOut, Menu, Plus, ShieldCheck, X } from 'lucide-react'
 import { demoClient, type DemoSession } from './api/demo-client.ts'
 import { MOCK_USERS } from './mocks/mock-users.ts'
-import { ReporterHome } from './features/reporter-w2/ReporterHome.tsx'
-import { ReporterWireframeView } from './features/reporter-w1/ReporterWireframeView.tsx'
-import { WaterLeakReportForm } from './features/reporter-w3/WaterLeakReportForm.tsx'
-import { ElectricalHazardReportForm } from './features/reporter-w4/ElectricalHazardReportForm.tsx'
-import { PhishingReportForm } from './features/reporter-w5/PhishingReportForm.tsx'
-import { StaffManagementView } from './features/staff/StaffManagementView.tsx'
+import { ReporterWorkspace } from './modern/ReporterWorkspace.tsx'
+import { StaffWorkspace } from './modern/StaffWorkspace.tsx'
+import { HealthPage } from './modern/HealthPage.tsx'
+import './modern/modern.css'
+import './modern/modern-extra.css'
 
-type Route = '/login' | '/reporter' | '/reporter/wireframe' | '/reporter/water-leak' | '/reporter/electrical-hazard' | '/reporter/phishing' | '/staff' | '/staff/dashboard' | '/health'
-const routes: Route[] = ['/login', '/reporter', '/reporter/wireframe', '/reporter/water-leak', '/reporter/electrical-hazard', '/reporter/phishing', '/staff', '/staff/dashboard', '/health']
+export type Page = 'login' | 'reports' | 'create' | 'overview' | 'queue' | 'health'
+const paths: Record<Page, string> = { login: '/login', reports: '/reporter', create: '/reporter/new', overview: '/staff/dashboard', queue: '/staff', health: '/health' }
+const pageFromPath = (): Page => (Object.keys(paths) as Page[]).find(key => paths[key] === location.pathname) || 'login'
 
-function currentRoute(): Route {
-  const path = window.location.pathname
-  return routes.includes(path as Route) ? path as Route : '/login'
-}
-
-function HealthSection() {
-  const [state, setState] = useState<'loading' | 'online' | 'offline'>('loading')
-  const [revision, setRevision] = useState(0)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    let active = true
-    const timeout = window.setTimeout(() => controller.abort(), 5000)
-    fetch('/api/v1/health/live', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok || (await response.json()).status !== 'ok') throw new Error('API unavailable')
-        if (active) setState('online')
-      })
-      .catch(() => { if (active) setState('offline') })
-      .finally(() => window.clearTimeout(timeout))
-    return () => { active = false; controller.abort(); window.clearTimeout(timeout) }
-  }, [revision])
-
-  return <section className="w2-panel"><h1>Kết nối backend</h1><p role="status">{state === 'loading' ? 'Đang kiểm tra…' : state === 'online' ? 'API hoạt động' : 'Không kết nối được API'}</p><button type="button" className="btn btn-outline" disabled={state === 'loading'} onClick={() => { setState('loading'); setRevision((value) => value + 1) }}>Kiểm tra lại</button></section>
-}
+export function Brand() { return <span className="m-brand-mark" aria-hidden="true">CIM<span /></span> }
+export function errorText(error: unknown) { const value = error as { error?: { message?: string }; message?: string }; return value?.error?.message || value?.message || 'Không thể hoàn tất thao tác. Vui lòng thử lại.' }
 
 export default function App() {
-  const [route, setRoute] = useState<Route>(currentRoute)
-  const [session, setSession] = useState<DemoSession | null>(demoClient.currentSession)
+  const [session, setSession] = useState<DemoSession | null>(() => demoClient.currentSession())
+  const [page, setPage] = useState<Page>(pageFromPath)
   const [email, setEmail] = useState(MOCK_USERS['user-reporter'].email)
-  const [loginState, setLoginState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [loginError, setLoginError] = useState('')
+  const [loggingIn, setLoggingIn] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => { const pop = () => setPage(pageFromPath()); addEventListener('popstate', pop); return () => removeEventListener('popstate', pop) }, [])
+  const go = (next: Page) => { history.pushState({}, '', paths[next]); setPage(next); setMenuOpen(false); scrollTo(0, 0) }
+  const login = async (event: FormEvent) => { event.preventDefault(); setLoggingIn(true); setLoginError(''); try { const result = await demoClient.login(email); setSession(result); go(result.user.role === 'reporter' ? 'reports' : 'overview') } catch (error) { setLoginError(errorText(error)) } finally { setLoggingIn(false) } }
+  const logout = () => { demoClient.logout(); setSession(null); go('login') }
+  const isReporter = session?.user.role === 'reporter'
+  const allowed = page === 'health' || (isReporter ? page === 'reports' || page === 'create' : !!session && (page === 'overview' || page === 'queue'))
+  const nav = isReporter ? [{ page: 'reports' as Page, label: 'Báo cáo của tôi', icon: ClipboardList }, { page: 'create' as Page, label: 'Tạo báo cáo', icon: Plus }] : [{ page: 'overview' as Page, label: 'Tổng quan', icon: LayoutDashboard }, { page: 'queue' as Page, label: 'Hàng đợi sự cố', icon: Inbox }]
 
-  useEffect(() => {
-    const onPopState = () => setRoute(currentRoute())
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
+  if (page === 'login') return <div className="m-auth"><div className="m-auth-brand"><Brand /><strong>Campus Incident Management</strong></div><div className="m-auth-layout"><div className="m-auth-story"><span className="m-eyebrow">USTH · CAMPUS INCIDENT MANAGEMENT</span><h1>Một khuôn viên<br /><em>an toàn hơn</em><br />bắt đầu từ đây.</h1><p>Báo cáo sự cố, theo dõi tiến độ và phối hợp xử lý trong cùng một không gian rõ ràng.</p><div className="m-auth-flow"><span><b>01</b> Ghi nhận</span><span><b>02</b> Điều phối</span><span><b>03</b> Xử lý</span></div></div><form className="m-auth-card" onSubmit={login}><span className="m-auth-icon"><ShieldCheck size={23} /></span><span className="m-eyebrow">MÔI TRƯỜNG TRẢI NGHIỆM</span><h2>Chào mừng trở lại</h2><p>Chọn vai trò để xem không gian làm việc tương ứng.</p><label className="m-field">Tài khoản mẫu<select value={email} onChange={event => setEmail(event.target.value)}>{Object.values(MOCK_USERS).map(user => <option key={user.id} value={user.email}>{user.display_name}</option>)}</select></label>{loginError && <p className="m-error" role="alert">{loginError}</p>}<button className="m-button primary wide" disabled={loggingIn}>{loggingIn ? 'Đang vào hệ thống…' : 'Vào hệ thống'}<ArrowRight size={18} /></button><small>Dữ liệu trong phiên này chỉ dùng để trải nghiệm giao diện.</small></form></div><footer className="m-auth-footer">Campus Incident Management <span>© USTH</span></footer></div>
 
-  const navigate = (path: Route) => { window.history.pushState({}, '', path); setRoute(path) }
-  const canReport = session?.user.role === 'reporter' || session?.user.role === 'administrator'
-  const canWork = !!session && session.user.role !== 'reporter'
-  const allowed = route === '/login' || route === '/health' ||
-    (route.startsWith('/reporter') ? canReport : canWork)
-
-  const login = async () => {
-    setLoginState('loading')
-    try {
-      const next = await demoClient.login(email)
-      setSession(next)
-      setLoginState('idle')
-      navigate(next.user.role === 'reporter' ? '/reporter' : '/staff')
-    } catch { setLoginState('error') }
-  }
-
-  const logout = () => { demoClient.logout(); setSession(null); navigate('/login') }
-
-  return <div className="app-layout">
-    <header className="app-navbar">
-      <div className="navbar-brand"><span className="brand-logo">CIM</span><div className="brand-text"><span className="brand-title">Campus Incident Management</span><span className="brand-sub">Tiếp nhận và xử lý sự cố khuôn viên</span></div></div>
-      <nav className="navbar-nav" aria-label="Điều hướng chính">
-        {canReport && <button type="button" className={`nav-link ${route === '/reporter' ? 'active' : ''}`} onClick={() => navigate('/reporter')}>Báo cáo của tôi</button>}
-        {canReport && <button type="button" className={`nav-link ${route === '/reporter/water-leak' ? 'active' : ''}`} onClick={() => navigate('/reporter/water-leak')}>Báo cáo rò nước</button>}
-        {canReport && <button type="button" className={`nav-link ${route === '/reporter/electrical-hazard' ? 'active' : ''}`} onClick={() => navigate('/reporter/electrical-hazard')}>Báo cáo nguy hiểm điện</button>}
-        {canReport && <button type="button" className={`nav-link ${route === '/reporter/phishing' ? 'active' : ''}`} onClick={() => navigate('/reporter/phishing')}>Báo cáo Phishing</button>}
-        {canReport && <button type="button" className={`nav-link ${route === '/reporter/wireframe' ? 'active' : ''}`} onClick={() => navigate('/reporter/wireframe')}>Mẫu giao diện báo cáo</button>}
-        {canWork && <button type="button" className={`nav-link ${route === '/staff/dashboard' ? 'active' : ''}`} onClick={() => navigate('/staff/dashboard')}>Dashboard chỉ số</button>}
-        {canWork && <button type="button" className={`nav-link ${route === '/staff' ? 'active' : ''}`} onClick={() => navigate('/staff')}>Hàng đợi xử lý</button>}
-        <button type="button" className={`nav-link ${route === '/health' ? 'active' : ''}`} onClick={() => navigate('/health')}>Kết nối API</button>
-        {session && <button type="button" className="nav-link" onClick={logout}>Đăng xuất</button>}
-      </nav>
-    </header>
-    <main className="app-main-content">
-      {!allowed && <section className="w2-panel"><h1>Không có quyền truy cập</h1><p>Đăng nhập bằng tài khoản phù hợp để xem trang này.</p><button type="button" className="btn btn-primary" onClick={() => navigate('/login')}>Đến đăng nhập</button></section>}
-      {allowed && route === '/login' && <section className="w2-panel w2-login" aria-labelledby="login-heading"><p className="w2-kicker">Bản demo W2</p><h1 id="login-heading">Đăng nhập mô phỏng</h1><p>Chọn tài khoản mẫu để kiểm tra quyền và giao diện. Luồng này chưa gọi API đăng nhập thật.</p><label>Tài khoản<select value={email} onChange={(event) => setEmail(event.target.value)}>{Object.values(MOCK_USERS).map((user) => <option key={user.id} value={user.email}>{user.display_name}</option>)}</select></label><button type="button" className="btn btn-primary" disabled={loginState === 'loading'} onClick={login}>{loginState === 'loading' ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>{loginState === 'error' && <p role="alert">Đăng nhập thất bại. Vui lòng thử lại.</p>}<p className="hint">Token demo chỉ giữ trong bộ nhớ; tải lại trang sẽ đăng xuất.</p></section>}
-      {allowed && route === '/reporter' && <ReporterHome />}
-      {allowed && route === '/reporter/water-leak' && <WaterLeakReportForm />}
-      {allowed && route === '/reporter/electrical-hazard' && <ElectricalHazardReportForm />}
-      {allowed && route === '/reporter/phishing' && <PhishingReportForm />}
-      {allowed && route === '/reporter/wireframe' && <ReporterWireframeView />}
-      {allowed && route === '/staff/dashboard' && session && <StaffManagementView key={`${session.user.id}-dashboard`} user={session.user} initialMode="dashboard" />}
-      {allowed && route === '/staff' && session && <StaffManagementView key={session.user.id} user={session.user} initialMode="interactive" />}
-      {allowed && route === '/health' && <HealthSection />}
-    </main>
-    <footer className="app-footer"><p>Campus Incident Management · USTH</p></footer>
-  </div>
+  return <div className="m-app"><aside className={`m-sidebar ${menuOpen ? 'open' : ''}`}><button className="m-sidebar-brand" onClick={() => go(isReporter ? 'reports' : 'overview')}><Brand /><span><strong>Campus Incident Management</strong><small>USTH · Quản lý sự cố</small></span></button><div className="m-sidebar-label">KHÔNG GIAN LÀM VIỆC</div><nav aria-label="Điều hướng chính">{nav.map(item => { const Icon = item.icon; return <button key={item.page} className={`m-nav-item ${page === item.page ? 'active' : ''}`} onClick={() => go(item.page)}><Icon size={19} />{item.label}</button> })}</nav><div className="m-sidebar-bottom"><div className="m-help"><CircleHelp size={18} /><span><strong>Cần hỗ trợ?</strong><small>Liên hệ bộ phận phụ trách của trường.</small></span></div><button className={`m-nav-item ${page === 'health' ? 'active' : ''}`} onClick={() => go('health')}><Activity size={19} />Trạng thái hệ thống</button><button className="m-nav-item danger" onClick={logout}><LogOut size={19} />Đăng xuất</button></div></aside><div className="m-content"><header className="m-topbar"><button className="m-menu" aria-label="Mở điều hướng" onClick={() => setMenuOpen(value => !value)}>{menuOpen ? <X size={22} /> : <Menu size={22} />}</button><span>Campus Incident Management <b>/</b> <strong>{page === 'reports' ? 'Báo cáo của tôi' : page === 'create' ? 'Tạo báo cáo' : page === 'overview' ? 'Tổng quan' : page === 'queue' ? 'Hàng đợi sự cố' : 'Trạng thái hệ thống'}</strong></span><div className="m-topbar-end"><span className="m-demo"><i /> Bản demo</span><span className="m-avatar" title={session?.user.display_name}>{session?.user.display_name.split(' ').slice(-2).map(word => word[0]).join('') || '?'}</span></div></header><main className="m-main">{!allowed ? <div className="m-empty"><h2>Không có quyền truy cập</h2><p>Hãy đăng nhập bằng vai trò phù hợp.</p><button className="m-button primary" onClick={() => go('login')}>Đến đăng nhập</button></div> : page === 'health' ? <HealthPage /> : isReporter ? <ReporterWorkspace page={page === 'create' ? 'create' : 'reports'} onCreate={() => go('create')} onBack={() => go('reports')} /> : session && <StaffWorkspace page={page === 'queue' ? 'queue' : 'overview'} user={session.user} onQueue={() => go('queue')} />}</main><footer className="m-footer"><span>Campus Incident Management · USTH</span><span>Tiếp nhận rõ ràng. Xử lý kịp thời.</span></footer></div></div>
 }
