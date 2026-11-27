@@ -23,15 +23,21 @@ from app.incidents.schemas import (
     IncidentResponse,
     IncidentSummary,
     validate_incident_create,
+    ReevaluateIncidentRequest,
 )
 from app.incidents.service import (
     IdempotencyKeyConflict,
     create_incident,
     list_incidents,
     visible_incidents,
+    reevaluate_incident,
 )
 from app.workflow.contracts import WorkflowViolation
-
+from app.incidents.schemas import ManualTriageRequest, RuleEvaluationResponse
+from app.incidents.service import (
+    get_rule_evaluation_history,
+    manual_triage,
+)
 
 class IncidentRoute(APIRoute):
     def get_route_handler(self):
@@ -215,3 +221,64 @@ def get_incident(
     result = IncidentResponse.model_validate(incident)
     staff_scope = IncidentPolicy().can_operate(principal, incident)
     return result if staff_scope else result.model_copy(update={"assigned_handler_id": None})
+
+@router.get(
+    "/{incident_id}/rule-evaluations",
+    response_model=list[RuleEvaluationResponse],
+)
+def rule_evaluation_history(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    return get_rule_evaluation_history(db, principal, incident_id)
+
+@router.post(
+    "/{incident_id}/triage",
+    response_model=IncidentResponse,
+)
+def triage_incident(
+    incident_id: UUID,
+    payload: ManualTriageRequest,
+    request_id: UUID = Depends(_request_id),
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    try:
+        incident = manual_triage(
+            db,
+            principal,
+            incident_id,
+            payload,
+            request_id,
+        )
+        db.commit()
+        return IncidentResponse.model_validate(incident)
+    except Exception:
+        db.rollback()
+        raise
+
+@router.post(
+    "/{incident_id}/reevaluate",
+    response_model=IncidentResponse,
+)
+def reevaluate_incident_route(
+    incident_id: UUID,
+    payload: ReevaluateIncidentRequest,
+    request_id: UUID = Depends(_request_id),
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    try:
+        incident = reevaluate_incident(
+            db,
+            principal,
+            incident_id,
+            payload.expected_version,
+            request_id,
+        )
+        db.commit()
+        return IncidentResponse.model_validate(incident)
+    except Exception:
+        db.rollback()
+        raise

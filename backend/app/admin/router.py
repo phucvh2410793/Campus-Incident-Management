@@ -296,3 +296,56 @@ def create_rule_version(
     )
     error = commit_or_conflict(db, request)
     return error or RuleVersionSummary.model_validate(version)
+
+@router.post(
+    "/rules/versions/{version_id}/activate",
+    response_model=RuleVersionSummary,
+)
+def activate_rule_version(
+    version_id: UUID,
+    request: Request,
+    actor: Administrator,
+    db: Database,
+):
+    # Lock rule versions to prevent concurrent activation changes.
+    versions = db.scalars(
+        select(RuleVersion)
+        .order_by(RuleVersion.id)
+        .with_for_update()
+    ).all()
+
+    target = next(
+        (item for item in versions if item.id == version_id),
+        None,
+    )
+
+    if target is None:
+        return admin_error(request, 404, "rule_version_not_found")
+
+    before = {
+        "active_versions": [
+            str(item.id) for item in versions if item.is_active
+        ]
+    }
+
+    # Only one rule version should be active.
+    for item in versions:
+        item.is_active = item.id == version_id
+
+    record_audit(
+        db,
+        request,
+        actor,
+        "rule_version.activated",
+        "rule_version",
+        target.id,
+        before,
+        {
+            "id": str(target.id),
+            "version": target.version,
+            "is_active": True,
+        },
+    )
+
+    error = commit_or_conflict(db, request)
+    return error or RuleVersionSummary.model_validate(target)

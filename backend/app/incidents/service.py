@@ -20,7 +20,12 @@ from app.incidents.schemas import IncidentCreateRequest
 from app.models import Department
 from app.rules.engine import evaluate_incident
 from app.rules.models import RuleEvaluation, RuleVersion
-
+from app.incidents.schemas import ManualTriageRequest
+from app.workflow.contracts import WorkflowViolation
+from app.workflow.models import AuditLog
+from app.workflow.repository import WorkflowRepository
+from app.rules.engine import MANUAL_QUEUE
+from app.rules.engine import evaluate_rule_version
 
 class IdempotencyKeyConflict(Exception):
     pass
@@ -255,3 +260,311 @@ def create_incident(
     except Exception:
         db.rollback()
         raise
+
+def get_rule_evaluation_history(db, principal, incident_id):
+    incident = db.scalar(
+        select(Incident).where(
+            Incident.id == incident_id,
+            visible_incidents(principal),
+        )
+    )
+
+    if incident is None:
+        raise WorkflowViolation("not_found", 404)
+
+    return db.scalars(
+        select(RuleEvaluation)
+        .where(RuleEvaluation.incident_id == incident_id)
+        .order_by(
+            RuleEvaluation.evaluated_at.asc(),
+            RuleEvaluation.id.asc(),
+        )
+    ).all()
+
+def manual_triage(
+    db,
+    principal,
+    incident_id,
+    payload: ManualTriageRequest,
+    request_id,
+):
+    with db.begin_nested():
+        incident = db.get(
+            Incident,
+            incident_id,
+            populate_existing=True,
+            with_for_update=True,
+        )
+
+        if incident is None:
+            raise WorkflowViolation("not_found", 404)
+
+        decision = IncidentPolicy().evaluate(principal, incident, "work")
+        if not decision.allowed:
+            raise WorkflowViolation(decision.code, decision.http_status)
+
+        if incident.version != payload.expected_version:
+            raise WorkflowViolation("version_conflict", 409)
+
+        if incident.status in {"resolved", "closed"}:
+            raise WorkflowViolation("invalid_transition", 409)
+
+        department = db.scalar(
+            select(Department)
+            .where(Department.id == payload.department_id)
+            .with_for_update(read=True)
+        )
+
+        if department is None or department.name.casefold() in {
+            "triage_queue",
+            MANUAL_QUEUE.casefold(),
+        }:
+            raise WorkflowViolation("validation_error", 422)
+
+        # Preserve the rule version associated with the existing evaluation.
+        current_evaluation = incident.rule_evaluation or {}
+        version_name = current_evaluation.get("rule_version", "demo-v1")
+
+        rule_version = db.scalar(
+            select(RuleVersion).where(RuleVersion.version == version_name)
+        )
+
+        if rule_version is None:
+            raise WorkflowViolation("rule_version_not_found", 409)
+
+        now = datetime.now(UTC)
+        actor_id = UUID(principal.user_id)
+
+        old_department_id = incident.department_id
+
+        before = {
+            "department_id": str(old_department_id) if old_department_id else None,
+            "severity": incident.severity,
+            "priority": incident.priority,
+            "triage_required": incident.triage_required,
+            "version": incident.version,
+        }
+
+        result = db.execute(
+            update(Incident)
+            .where(
+                Incident.id == incident_id,
+                Incident.version == payload.expected_version,
+            )
+            .values(
+                department_id=department.id,
+                assigned_handler_id=(
+                    None
+                    if old_department_id != department.id
+                    else incident.assigned_handler_id
+                ),
+                severity=payload.severity,
+                priority=payload.priority,
+                acknowledgment_deadline_at=calculate_deadline(
+                    incident.reported_at,
+                    payload.priority,
+                ),
+                triage_required=False,
+                rule_evaluation={
+                    "rule_id": None,
+                    "rule_version": version_name,
+                    "severity": payload.severity,
+                    "priority": payload.priority,
+                    "department": department.name,
+                    "reason": payload.reason,
+                    "triage_required": False,
+                    "safety_flags": [],
+                    "manual": True,
+                },
+                version=Incident.version + 1,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+
+        if result.rowcount != 1:
+            raise WorkflowViolation("version_conflict", 409)
+
+        db.add(
+            RuleEvaluation(
+                incident_id=incident_id,
+                rule_version_id=rule_version.id,
+                rule_id=None,
+                severity=payload.severity,
+                priority=payload.priority,
+                department=department.name,
+                reason=f"Manual triage: {payload.reason}",
+                triage_required=False,
+                safety_flags=[],
+            )
+        )
+
+        db.flush()
+        db.refresh(incident)
+
+        after = {
+            "department_id": str(incident.department_id),
+            "severity": incident.severity,
+            "priority": incident.priority,
+            "triage_required": incident.triage_required,
+            "version": incident.version,
+            "reason": payload.reason,
+            "manual": True,
+        }
+
+        WorkflowRepository(db).add_audit(
+            AuditLog(
+                incident_id=incident_id,
+                actor_id=actor_id,
+                action="incident.manual_triage",
+                request_id=request_id,
+                created_at=now,
+                before=before,
+                after=after,
+            )
+        )
+
+        db.flush()
+
+    return incident
+
+def reevaluate_incident(
+    db,
+    principal,
+    incident_id,
+    expected_version,
+    request_id,
+):
+    if principal.role != "administrator":
+        raise WorkflowViolation("forbidden", 403)
+
+    with db.begin_nested():
+        incident = db.get(
+            Incident,
+            incident_id,
+            populate_existing=True,
+            with_for_update=True,
+        )
+
+        if incident is None:
+            raise WorkflowViolation("not_found", 404)
+
+        if incident.version != expected_version:
+            raise WorkflowViolation("version_conflict", 409)
+
+        if incident.status in {"resolved", "closed"}:
+            raise WorkflowViolation("invalid_transition", 409)
+
+        rule_version = db.scalar(
+            select(RuleVersion)
+            .where(RuleVersion.is_active.is_(True))
+            .order_by(RuleVersion.created_at.desc())
+            .limit(1)
+        )
+
+        if rule_version is None:
+            raise WorkflowViolation("rule_version_not_found", 409)
+
+        result = evaluate_rule_version(
+            incident.category,
+            incident.answers or {},
+            rule_version,
+        )
+
+        department = db.scalar(
+            select(Department).where(
+                Department.name == result.department
+            )
+        )
+
+        if department is None:
+            raise WorkflowViolation("department_not_found", 409)
+
+        now = datetime.now(UTC)
+        actor_id = UUID(principal.user_id)
+
+        old_department_id = incident.department_id
+        new_department_id = department.id
+
+        before = {
+            "department_id": str(old_department_id) if old_department_id else None,
+            "severity": incident.severity,
+            "priority": incident.priority,
+            "triage_required": incident.triage_required,
+            "rule_evaluation": incident.rule_evaluation,
+            "version": incident.version,
+        }
+
+        changed_department = old_department_id != new_department_id
+
+        update_result = db.execute(
+            update(Incident)
+            .where(
+                Incident.id == incident_id,
+                Incident.version == expected_version,
+            )
+            .values(
+                department_id=new_department_id,
+                assigned_handler_id=(
+                    None if changed_department else incident.assigned_handler_id
+                ),
+                severity=result.severity,
+                priority=result.priority,
+                acknowledgment_deadline_at=(
+                    calculate_deadline(incident.reported_at, result.priority)
+                    if result.priority is not None
+                    else None
+                ),
+                triage_required=result.triage_required,
+                rule_evaluation=result.model_dump(),
+                version=Incident.version + 1,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+
+        if update_result.rowcount != 1:
+            raise WorkflowViolation("version_conflict", 409)
+
+        db.add(
+            RuleEvaluation(
+                incident_id=incident_id,
+                rule_version_id=rule_version.id,
+                rule_id=result.rule_id,
+                severity=result.severity,
+                priority=result.priority,
+                department=result.department,
+                reason=result.reason,
+                triage_required=result.triage_required,
+                safety_flags=list(result.safety_flags),
+            )
+        )
+
+        db.flush()
+        db.refresh(incident)
+
+        after = {
+            "department_id": str(incident.department_id),
+            "severity": incident.severity,
+            "priority": incident.priority,
+            "triage_required": incident.triage_required,
+            "rule_evaluation": incident.rule_evaluation,
+            "version": incident.version,
+            "department_changed": changed_department,
+        }
+
+        WorkflowRepository(db).add_audit(
+            AuditLog(
+                incident_id=incident_id,
+                actor_id=actor_id,
+                action="incident.rule_re_evaluated",
+                request_id=request_id,
+                created_at=now,
+                before=before,
+                after=after,
+            )
+        )
+
+        db.flush()
+
+    return incident

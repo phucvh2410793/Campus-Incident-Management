@@ -122,3 +122,40 @@ def evaluate_incident(
         reason="Thiếu dữ liệu hoặc không khớp quy tắc; cần phân loại thủ công",
         triage_required=True,
     )
+
+def evaluate_rule_version(category, answers, rule_version):
+    """Evaluate an incident using a stored RuleVersion."""
+
+    for rule in rule_version.rules:
+        if rule["category"] != category:
+            continue
+
+        condition = rule["condition"]
+
+        if not all(
+            answers.get(key) == value
+            for key, value in condition.items()
+        ):
+            continue
+
+        return RuleResult(
+            rule_id=rule["rule_id"],
+            rule_version=rule_version.version,
+            severity=rule["severity"],
+            priority=rule["priority"],
+            department=rule["department"],
+            reason=rule["reason"],
+            triage_required=False,
+            safety_flags=tuple(rule.get("safety_flags", [])),
+        )
+
+    return RuleResult(
+        rule_id=None,
+        rule_version=rule_version.version,
+        severity=None,
+        priority=None,
+        department=MANUAL_QUEUE,
+        reason="No matching rule found. Manual triage is required.",
+        triage_required=True,
+        safety_flags=(),
+    )
