@@ -7,8 +7,8 @@ import {
   type DispositionInput,
 } from '../mocks/n7-role-mock-api.ts'
 import { staffApiAdapter, type AdapterMode } from './staff-api-adapter.ts'
+import { reporterApiAdapter, type ReporterAdapterMode } from './reporter-api-adapter.ts'
 import {
-  mockN6ReporterApi,
   type CreateIncidentInput,
   type MockAttachmentInput,
   type PaginatedResult,
@@ -38,18 +38,22 @@ export const demoClient = {
 
   getAdapterMode: (): AdapterMode => staffApiAdapter.getMode(),
   setAdapterMode: (mode: AdapterMode) => staffApiAdapter.setMode(mode),
+  getReporterAdapterMode: (): ReporterAdapterMode => reporterApiAdapter.getMode(),
+  setReporterAdapterMode: (mode: ReporterAdapterMode) => reporterApiAdapter.setMode(mode),
   checkBackendHealth: () => staffApiAdapter.checkBackendHealth(),
 
   async login(email: string): Promise<DemoSession> {
     const result = await mockApi.login({ email })
     session = { user: result.user, accessToken: result.access_token }
     staffApiAdapter.setBearerToken(result.access_token)
+    reporterApiAdapter.setBearerToken(result.access_token)
     return session
   },
 
   logout(): void {
     session = null
     staffApiAdapter.setBearerToken(null)
+    reporterApiAdapter.setBearerToken(null)
   },
 
   async reporterIncidents(): Promise<IncidentSummary[]> {
@@ -67,7 +71,7 @@ export const demoClient = {
     return staffApiAdapter.getAllStaffIncidents(session.user, filters)
   },
 
-  // N6-W06: Tạo sự cố kèm Idempotency-Key chống gửi lặp
+  // N6-W06 / N6-W08: Tạo sự cố kèm Idempotency-Key chống gửi lặp qua Reporter Adapter
   async createIncident(
     input: CreateIncidentInput,
     idempotencyKey: string
@@ -75,7 +79,7 @@ export const demoClient = {
     if (!session || !['reporter', 'administrator'].includes(session.user.role)) {
       throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
     }
-    const res = await mockN6ReporterApi.createIncident(input, idempotencyKey, session.user.id)
+    const res = await reporterApiAdapter.createIncident(input, idempotencyKey, session.user.id)
     try {
       const mockIncident = await mockApi.createIncident(session.user, input, idempotencyKey)
       mockIncident.id = res.data.id
@@ -84,7 +88,7 @@ export const demoClient = {
     }
     return res
   },
-  // N6-W06: Tải lên từng tệp bằng chứng với expected_version
+  // N6-W06 / N6-W08: Tải lên từng tệp bằng chứng với expected_version qua Reporter Adapter
   async uploadAttachment(
     incidentId: string,
     file: MockAttachmentInput,
@@ -93,7 +97,7 @@ export const demoClient = {
     if (!session || !['reporter', 'administrator'].includes(session.user.role)) {
       throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
     }
-    const att = await mockN6ReporterApi.uploadAttachment(incidentId, file, expectedVersion, session.user.id)
+    const att = await reporterApiAdapter.uploadAttachment(incidentId, file, expectedVersion, session.user.id)
     try {
       await mockApi.uploadAttachment(
         session.user,
@@ -110,26 +114,26 @@ export const demoClient = {
     }
     return att
   },
-  // N6-W07: Danh sách sự cố người báo cáo với cursor, bộ lọc, overdue
+  // N6-W07 / N6-W08: Danh sách sự cố người báo cáo với cursor, bộ lọc, overdue qua Reporter Adapter
   async getMyIncidents(
     params?: { category?: Category; status?: Status; limit?: number; cursor?: string }
   ): Promise<PaginatedResult<IncidentSummary>> {
     if (!session || !['reporter', 'administrator'].includes(session.user.role)) {
       throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
     }
-    return mockN6ReporterApi.getMyIncidents(session.user.id, params)
+    return reporterApiAdapter.getMyIncidents(session.user.id, params)
   },
-  // N6-W07: Chi tiết sự cố của người báo cáo (Scope isolation: chỉ xem của mình)
+  // N6-W07 / N6-W08: Chi tiết sự cố của người báo cáo (Scope isolation) qua Reporter Adapter
   async getReporterIncidentDetail(id: string): Promise<IncidentResponse> {
     if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem chi tiết.')
-    return mockN6ReporterApi.getIncidentDetail(id, session.user.id)
+    return reporterApiAdapter.getIncidentDetail(id, session.user.id)
   },
-  // N6-W07: Timeline công khai (chỉ visibility: 'public', stripped nội bộ)
+  // N6-W07 / N6-W08: Timeline công khai qua Reporter Adapter
   async getPublicHistory(id: string): Promise<HistoryItem[]> {
     if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem lịch sử.')
-    return mockN6ReporterApi.getPublicHistory(id, session.user.id)
+    return reporterApiAdapter.getPublicHistory(id, session.user.id)
   },
-  // N6-W07: Bổ sung thông tin cho sự cố (kiểm tra expected_version, cấm khi resolved/closed)
+  // N6-W07 / N6-W08: Bổ sung thông tin cho sự cố qua Reporter Adapter
   async supplementIncident(
     id: string,
     input: SupplementIncidentInput
@@ -137,12 +141,12 @@ export const demoClient = {
     if (!session || !['reporter', 'administrator'].includes(session.user.role)) {
       throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
     }
-    return mockN6ReporterApi.supplementIncident(id, input, session.user.id)
+    return reporterApiAdapter.supplementIncident(id, input, session.user.id)
   },
-  // N6-W07: Lấy danh sách tệp đính kèm của sự cố (reporter)
+  // N6-W07 / N6-W08: Lấy danh sách tệp đính kèm của sự cố qua Reporter Adapter
   async getReporterAttachments(id: string): Promise<AttachmentSummary[]> {
     if (!session) throw new Error('Yêu cầu đăng nhập trước khi xem tệp đính kèm.')
-    return mockN6ReporterApi.getAttachments(id, session.user.id)
+    return reporterApiAdapter.getAttachments(id, session.user.id)
   },
   // N7-W04: Chi tiết, Timeline, File, Comments & Quyền (Staff)
   async getIncidentDetail(id: string): Promise<IncidentResponse> {
