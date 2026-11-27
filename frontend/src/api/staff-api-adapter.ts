@@ -25,7 +25,7 @@ import {
   type DispositionInput,
   type PermissionStatus,
 } from '../mocks/n7-role-mock-api.ts'
-import { DEPARTMENTS } from '../mocks/mock-users.ts'
+import { DEPARTMENTS, MOCK_USERS } from '../mocks/mock-users.ts'
 
 export type AdapterMode = 'real' | 'mock'
 
@@ -84,12 +84,64 @@ class StaffApiAdapter {
     }
   }
 
+  setBaseUrl(url: string): void {
+    this.baseUrl = url.replace(/\/$/, '')
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl
+  }
+
   setBearerToken(token: string | null): void {
     this.token = token
   }
 
   getBearerToken(): string | null {
     return this.token
+  }
+
+  /**
+   * Đăng nhập xác thực và thiết lập Bearer Token (hỗ trợ cả Real API N1 và Mock)
+   */
+  async login(
+    email: string,
+    password: string = 'password123'
+  ): Promise<{ user: UserSummary; token: string }> {
+    if (this.mode === 'real') {
+      const res = await fetch(`${this.baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      this.setBearerToken(data.access_token)
+      const userSummary: UserSummary = {
+        id: data.user.id,
+        email: data.user.email,
+        display_name: data.user.display_name,
+        role: data.user.role,
+        department_id: data.user.department_id,
+        is_active: data.user.is_active,
+      }
+      return { user: userSummary, token: data.access_token }
+    }
+
+    const mockUser = Object.values(MOCK_USERS).find(
+      (u) => u.email.toLowerCase() === email.toLowerCase()
+    )
+    if (!mockUser) {
+      throw {
+        error: {
+          code: 'user_not_found',
+          message: 'Không tìm thấy tài khoản người dùng tương ứng.',
+          status: 404,
+        },
+      }
+    }
+    const token = `mock-bearer-token-${mockUser.id}`
+    this.setBearerToken(token)
+    return { user: mockUser, token }
   }
 
   /**
@@ -121,20 +173,46 @@ class StaffApiAdapter {
   }
 
   private async handleFetchError(res: Response): Promise<never> {
-    let errorData: { error?: { code?: string; message?: string }; detail?: string } = {}
+    let errorData: {
+      error?: { code?: string; message?: string; details?: Array<{ field: string; reason: string }> }
+      detail?: unknown
+    } = {}
     try {
       errorData = await res.json()
     } catch {
       // Body không phải JSON
     }
 
-    const code = errorData.error?.code || (res.status === 409 ? 'version_conflict' : res.status === 403 ? 'forbidden' : res.status === 404 ? 'not_found' : 'server_error')
-    const message = errorData.error?.message || errorData.detail || (res.status === 409 ? 'Xung đột phiên bản: Sự cố đã được cập nhật bởi một người khác.' : `Lỗi máy chủ (${res.status}).`)
+    const code =
+      errorData.error?.code ||
+      (res.status === 409
+        ? 'version_conflict'
+        : res.status === 403
+        ? 'forbidden'
+        : res.status === 422
+        ? 'validation_error'
+        : res.status === 404
+        ? 'not_found'
+        : res.status === 401
+        ? 'unauthenticated'
+        : 'server_error')
+
+    const message =
+      errorData.error?.message ||
+      (typeof errorData.detail === 'string' ? errorData.detail : undefined) ||
+      (res.status === 409
+        ? 'Xung đột phiên bản: Sự cố đã được cập nhật bởi một người khác.'
+        : res.status === 403
+        ? 'Quyền truy cập bị từ chối: Bạn không có quyền thực hiện thao tác này.'
+        : res.status === 422
+        ? 'Dữ liệu yêu cầu không hợp lệ.'
+        : `Lỗi máy chủ (${res.status}).`)
 
     throw {
       error: {
         code,
         message,
+        details: errorData.error?.details || [],
         status: res.status,
       },
     }
@@ -235,30 +313,47 @@ class StaffApiAdapter {
     actor: UserSummary
   ): Promise<IncidentResponse> {
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/assign`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify({
-            department_id: input.department_id,
-            handler_id: null,
-            reason: input.reason,
-            expected_version: input.expected_version,
-          }),
-        })
-        if (!res.ok) await this.handleFetchError(res)
-        const data = await res.json()
-        const updated = data.incident || data
-        return {
-          ...updated,
-          priority: input.priority || updated.priority,
-          triage_required: false,
-          department_name: DEPARTMENTS[input.department_id]?.name || input.department_id,
+      // Bước 1: Gán bộ phận qua assign endpoint (bỏ dept-triage)
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/assign`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify({
+          department_id: input.department_id,
+          handler_id: null,
+          reason: input.reason,
+          expected_version: input.expected_version,
+        }),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      let updated: IncidentResponse = data.incident || data
+
+      // Bước 2: Nếu có chỉ định priority khác, điều chỉnh priority
+      if (input.priority && input.priority !== updated.priority) {
+        try {
+          const prioRes = await fetch(`${this.baseUrl}/incidents/${id}/priority`, {
+            method: 'POST',
+            headers: this.authHeaders(),
+            body: JSON.stringify({
+              priority: input.priority,
+              reason: input.reason,
+              expected_version: updated.version,
+            }),
+          })
+          if (prioRes.ok) {
+            const prioData = await prioRes.json()
+            updated = prioData.incident || prioData
+          }
+        } catch (prioErr) {
+          console.warn('Real API priority change chained during triage failed:', prioErr)
         }
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API triageIncident failed, falling back to mock adapter:', err)
+      }
+
+      return {
+        ...updated,
+        priority: input.priority || updated.priority,
+        triage_required: false,
+        department_name: DEPARTMENTS[input.department_id]?.name || input.department_id,
       }
     }
 
@@ -274,28 +369,22 @@ class StaffApiAdapter {
     actor: UserSummary
   ): Promise<IncidentResponse> {
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/assign`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify({
-            department_id: input.department_id,
-            handler_id: input.handler_id || null,
-            reason: input.reason,
-            expected_version: input.expected_version,
-          }),
-        })
-        if (!res.ok) await this.handleFetchError(res)
-        const data = await res.json()
-        const updated = data.incident || data
-        return {
-          ...updated,
-          department_name: DEPARTMENTS[input.department_id]?.name || input.department_id,
-        }
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API assignIncident failed, falling back to mock adapter:', err)
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/assign`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify({
+          department_id: input.department_id,
+          handler_id: input.handler_id || null,
+          reason: input.reason,
+          expected_version: input.expected_version,
+        }),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      const updated = data.incident || data
+      return {
+        ...updated,
+        department_name: DEPARTMENTS[input.department_id]?.name || input.department_id,
       }
     }
 
@@ -312,22 +401,16 @@ class StaffApiAdapter {
     actor: UserSummary
   ): Promise<IncidentResponse> {
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/acknowledge`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify({
-            expected_version: expectedVersion,
-          }),
-        })
-        if (!res.ok) await this.handleFetchError(res)
-        const data = await res.json()
-        return data.incident || data
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API acknowledgeIncident failed, falling back to mock adapter:', err)
-      }
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/acknowledge`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify({
+          expected_version: expectedVersion,
+        }),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      return data.incident || data
     }
 
     return this.clone(await mockN7StaffRoleApi.acknowledgeIncident(id, expectedVersion, actor))
@@ -350,22 +433,14 @@ class StaffApiAdapter {
     }
 
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/transitions`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(transitionInput),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          return data.incident || data
-        }
-        if (res.status === 409) await this.handleFetchError(res)
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API resolveIncident failed, falling back to mock adapter:', err)
-      }
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/transitions`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(transitionInput),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      return data.incident || data
     }
 
     return this.clone(await mockN7StaffRoleApi.transitionStatus(id, transitionInput, actor))
@@ -387,22 +462,14 @@ class StaffApiAdapter {
     }
 
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/transitions`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(transitionInput),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          return data.incident || data
-        }
-        if (res.status === 409) await this.handleFetchError(res)
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API closeIncident failed, falling back to mock adapter:', err)
-      }
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/transitions`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(transitionInput),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      return data.incident || data
     }
 
     return this.clone(await mockN7StaffRoleApi.transitionStatus(id, transitionInput, actor))
@@ -424,22 +491,14 @@ class StaffApiAdapter {
     }
 
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/transitions`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(transitionInput),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          return data.incident || data
-        }
-        if (res.status === 409) await this.handleFetchError(res)
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API reopenIncident failed, falling back to mock adapter:', err)
-      }
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/transitions`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(transitionInput),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      return data.incident || data
     }
 
     return this.clone(await mockN7StaffRoleApi.transitionStatus(id, transitionInput, actor))
@@ -454,22 +513,14 @@ class StaffApiAdapter {
     actor: UserSummary
   ): Promise<IncidentResponse> {
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/priority`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(input),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          return data.incident || data
-        }
-        if (res.status === 409) await this.handleFetchError(res)
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API adjustPriority failed, falling back to mock adapter:', err)
-      }
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/priority`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      return data.incident || data
     }
 
     return this.clone(await mockN7StaffRoleApi.adjustPriority(id, input, actor))
@@ -484,22 +535,14 @@ class StaffApiAdapter {
     actor: UserSummary
   ): Promise<IncidentResponse> {
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/disposition`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(input),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          return data.incident || data
-        }
-        if (res.status === 409) await this.handleFetchError(res)
-      } catch (err) {
-        const errObj = err as { error?: { code?: string } }
-        if (errObj.error?.code === 'version_conflict') throw err
-        console.warn('Real API dispositionIncident failed, falling back to mock adapter:', err)
-      }
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/disposition`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      const data = await res.json()
+      return data.incident || data
     }
 
     return this.clone(await mockN7StaffRoleApi.dispositionIncident(id, input, actor))
@@ -514,18 +557,13 @@ class StaffApiAdapter {
     actor: UserSummary
   ): Promise<Comment> {
     if (this.mode === 'real') {
-      try {
-        const res = await fetch(`${this.baseUrl}/incidents/${id}/comments`, {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(input),
-        })
-        if (res.ok) {
-          return await res.json()
-        }
-      } catch (err) {
-        console.warn('Real API addComment failed, falling back to mock adapter:', err)
-      }
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/comments`, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) await this.handleFetchError(res)
+      return await res.json()
     }
 
     return mockN7StaffRoleApi.addComment(id, input, actor)
@@ -543,7 +581,7 @@ class StaffApiAdapter {
         })
         if (res.ok) {
           const data = await res.json()
-          return data.items || []
+          return Array.isArray(data) ? data : data.items || []
         }
       } catch (err) {
         console.warn('Real API getComments failed, falling back to mock adapter:', err)
