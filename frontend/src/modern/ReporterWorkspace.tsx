@@ -13,8 +13,57 @@ export const statusInfo: Record<Status, string> = { reported: 'Mới tiếp nh�
 export const formatDate = (value: string | null | undefined) => value ? new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value)) : '—'
 export function CategoryIcon({ category }: { category: Category }) { const Icon = categoryInfo[category].icon; return <span className={`m-category-icon ${category}`}><Icon size={21} strokeWidth={1.8} /></span> }
 export function StatusPill({ status }: { status: Status }) { return <span className={`m-status ${status}`}><i />{statusInfo[status]}</span> }
-export function PriorityPill({ priority, triage }: { priority: IncidentSummary['priority']; triage: boolean }) { return <span className={`m-priority ${priority || 'none'}`}>{triage ? 'Cần phân loại' : priority ? priority.toUpperCase() : 'Chưa xác định'}</span> }
-export function IncidentRow({ item, onClick }: { item: IncidentSummary | IncidentResponse; onClick: () => void }) { return <button className="m-incident-row" onClick={onClick}><CategoryIcon category={item.category} /><span className="m-incident-body"><strong>{item.title}</strong><small>#{item.id.slice(0, 8)} <span>·</span> {formatDate(item.reported_at)}</small></span><span className="m-incident-tags"><PriorityPill priority={item.priority} triage={item.triage_required} /><StatusPill status={item.status} /></span><ChevronRight className="m-row-chevron" size={19} /></button> }
+export const priorityLabels: Record<'p1' | 'p2' | 'p3', { text: string; sla: string }> = {
+  p1: { text: 'P1 - Khẩn cấp', sla: '15 phút' },
+  p2: { text: 'P2 - Cao', sla: '2 giờ' },
+  p3: { text: 'P3 - Tiêu chuẩn', sla: '8 giờ' },
+}
+export function PriorityPill({ priority, triage, showSla = true }: { priority: IncidentSummary['priority']; triage: boolean; showSla?: boolean }) {
+  if (triage) {
+    return <span className="m-priority triage" aria-label="Cần phân loại thủ công (SLA 30 phút)">Cần phân loại{showSla && <small> · SLA 30p</small>}</span>
+  }
+  if (!priority) {
+    return <span className="m-priority none">Chưa xác định</span>
+  }
+  const meta = priorityLabels[priority] || { text: priority.toUpperCase(), sla: '' }
+  return (
+    <span
+      className={`m-priority ${priority}`}
+      aria-label={`${meta.text} (SLA tiếp nhận: ${meta.sla})`}
+    >
+      {meta.text}
+      {showSla && meta.sla && <small> · {meta.sla}</small>}
+    </span>
+  )
+}
+export function IncidentRow({ item, onClick }: { item: IncidentSummary | IncidentResponse; onClick: () => void }) {
+  return (
+    <button
+      className="m-incident-row"
+      onClick={onClick}
+      tabIndex={0}
+      role="row"
+      aria-label={`Sự cố ${item.title}, mã ${item.id.slice(0, 8)}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+    >
+      <CategoryIcon category={item.category} />
+      <span className="m-incident-body">
+        <strong>{item.title}</strong>
+        <small>#{item.id.slice(0, 8)} <span>·</span> {formatDate(item.reported_at)}</small>
+      </span>
+      <span className="m-incident-tags">
+        <PriorityPill priority={item.priority} triage={item.triage_required} />
+        <StatusPill status={item.status} />
+      </span>
+      <ChevronRight className="m-row-chevron" size={19} />
+    </button>
+  )
+}
 export function Metric({ label, value, note, icon: Icon }: { label: string; value: number; note: string; icon: typeof FileText }) { return <div className="m-metric"><span className="m-metric-icon"><Icon size={20} /></span><b>{value}</b><strong>{label}</strong><small>{note}</small></div> }
 export function Loading() { return <div className="m-loading" role="status"><span /><span /><span />Đang tải dữ liệu…</div> }
 export function ErrorState({ message, retry }: { message: string; retry: () => void }) { return <div className="m-empty"><AlertCircle size={31} /><h3>Chưa tải được dữ liệu</h3><p>{message}</p><button className="m-button secondary" onClick={retry}><RefreshCw size={17} /> Thử lại</button></div> }

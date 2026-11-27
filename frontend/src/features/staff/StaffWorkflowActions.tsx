@@ -152,6 +152,12 @@ export function StaffWorkflowActions({
     message: string
   } | null>(null)
 
+  // Thông báo từ chối quyền truy cập 403 (N7-W09: Rà soát & Cập nhật sau lỗi 403/409)
+  const [forbiddenNotice, setForbiddenNotice] = useState<{
+    action: string
+    message: string
+  } | null>(null)
+
   // Thông báo thành công
   const [successNotice, setSuccessNotice] = useState<string | null>(null)
 
@@ -174,22 +180,39 @@ export function StaffWorkflowActions({
     setAdapterMode(mode)
   }
 
+  // Điều hướng bằng phím mũi tên giữa các Tab hành động (N7-W09: Bàn phím & Focus WAI-ARIA)
+  const handleTabKeyDown = (e: React.KeyboardEvent, tab: ActionTabKey) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      const idx = validActionTabs.indexOf(tab)
+      const nextTab = validActionTabs[(idx + 1) % validActionTabs.length]
+      setActiveActionTab(nextTab)
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const idx = validActionTabs.indexOf(tab)
+      const prevTab = validActionTabs[(idx - 1 + validActionTabs.length) % validActionTabs.length]
+      setActiveActionTab(prevTab)
+    }
+  }
+
   // =========================================================================
-  // XỬ LÝ LỖI 409 VERSION CONFLICT (TIÊU CHÍ HOÀN THÀNH CỐT LÕI)
-  // "409 tải lại và không mất dữ liệu nhập"
+  // XỬ LÝ LỖI 409 VERSION CONFLICT VÀ 403 FORBIDDEN (TIÊU CHÍ HOÀN THÀNH N7-W09)
+  // "Cập nhật sau lỗi 403/409; không mất dữ liệu nhập"
   // =========================================================================
   const handleCatchError = async (
     actionLabel: string,
     err: unknown,
-    setLocalErrors: (errors: { reason?: string; general?: string }) => void
+    setLocalErrors: (errors: { reason?: string; general?: string; resolution?: string }) => void
   ) => {
     const errObj = err as {
-      error?: { code?: string; message?: string; details?: Array<{ field: string; reason: string }> }
+      error?: { code?: string; message?: string; status?: number; details?: Array<{ field: string; reason: string }> }
     }
     const errorCode = errObj?.error?.code
+    const errorStatus = errObj?.error?.status
     const errorMsg = errObj?.error?.message || 'Có lỗi xảy ra khi thực hiện thao tác.'
 
-    if (errorCode === 'version_conflict') {
+    // 1. XỬ LÝ LỖI 409 VERSION CONFLICT: Tải lại và không mất dữ liệu nhập
+    if (errorCode === 'version_conflict' || errorStatus === 409) {
       const oldVer = incident.version
       try {
         const fresh = await onReloadIncident()
@@ -204,19 +227,37 @@ export function StaffWorkflowActions({
           action: actionLabel,
           oldVersion: oldVer,
           newVersion: oldVer + 1,
-          message: 'Phát hiện xung đột phiên bản. Vui lòng thử gửi lại.',
+          message: 'Phát hiện xung đột phiên bản. Dữ liệu vừa nhập vẫn được giữ nguyên, vui lòng thử gửi lại.',
         })
       }
       return
     }
 
-    if (errorCode === 'validation_error' && errObj?.error?.details) {
+    // 2. XỬ LÝ LỖI 403 FORBIDDEN: Cập nhật sau lỗi 403 và bảo lưu dữ liệu nhập
+    if (errorCode === 'forbidden' || errorStatus === 403) {
+      try {
+        const fresh = await onReloadIncident()
+        setForbiddenNotice({
+          action: actionLabel,
+          message: `Thao tác "${actionLabel}" bị từ chối (403 Forbidden). Trạng thái hoặc phân quyền sự cố đã được đồng bộ lại (Phiên bản v${fresh.version}). Toàn bộ nội dung bạn vừa nhập vẫn được bảo lưu an toàn!`,
+        })
+      } catch {
+        setForbiddenNotice({
+          action: actionLabel,
+          message: `Thao tác "${actionLabel}" bị từ chối (403 Forbidden). Bạn không có thẩm quyền trên sự cố hiện tại. Dữ liệu bạn vừa nhập vẫn được bảo lưu nguyên vẹn.`,
+        })
+      }
+      return
+    }
+
+    if ((errorCode === 'validation_error' || errorStatus === 422) && errObj?.error?.details) {
       const fieldMap: Record<string, string> = {}
       for (const d of errObj.error.details) {
         fieldMap[d.field] = d.reason
       }
       setLocalErrors({
-        reason: fieldMap['reason'] || fieldMap['resolution'] || undefined,
+        reason: fieldMap['reason'] || undefined,
+        resolution: fieldMap['resolution'] || undefined,
         general: errorMsg,
       })
       return
@@ -231,6 +272,7 @@ export function StaffWorkflowActions({
   const handleSubmitTriage = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
 
     if (!triageReason.trim()) {
@@ -270,6 +312,7 @@ export function StaffWorkflowActions({
   const handleSubmitAssign = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
 
     if (!assignReason.trim()) {
@@ -311,6 +354,7 @@ export function StaffWorkflowActions({
   const handleSubmitPriority = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
 
     if (!priorityReason.trim()) {
@@ -349,6 +393,7 @@ export function StaffWorkflowActions({
   const handleSubmitAcknowledge = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
     setAckGeneralError(null)
     setIsSubmittingAck(true)
@@ -371,6 +416,7 @@ export function StaffWorkflowActions({
   const handleSubmitResolve = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
 
     if (!resolutionText.trim()) {
@@ -412,6 +458,7 @@ export function StaffWorkflowActions({
   const handleSubmitClose = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
     setCloseFieldErrors({})
     setIsSubmittingClose(true)
@@ -442,6 +489,7 @@ export function StaffWorkflowActions({
   const handleSubmitReopen = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
 
     if (!reopenReason.trim() || reopenReason.trim().length < 5) {
@@ -477,6 +525,7 @@ export function StaffWorkflowActions({
   const handleSubmitDisposition = async (e: FormEvent, simulateConflictVersion?: number) => {
     e.preventDefault()
     setConflictNotice(null)
+    setForbiddenNotice(null)
     setSuccessNotice(null)
 
     const errors: { reason?: string; duplicate_of_id?: string; general?: string } = {}
@@ -561,6 +610,36 @@ export function StaffWorkflowActions({
               <span>🔒 <strong>Bảo toàn dữ liệu:</strong> Toàn bộ nội dung lý do bạn đã nhập vẫn đang được giữ nguyên trong ô bên dưới. Hãy kiểm tra lại và nhấn gửi lại.</span>
             </div>
           </div>
+          <button
+            type="button"
+            className="btn-close-notice"
+            onClick={() => setConflictNotice(null)}
+            aria-label="Đóng cảnh báo xung đột"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* CẢNH BÁO TỪ CHỐI QUYỀN TRUY CẬP (HTTP 403 FORBIDDEN - N7-W09) */}
+      {forbiddenNotice && (
+        <div className="workflow-conflict-banner workflow-forbidden-banner" role="alert" aria-live="assertive">
+          <span className="workflow-conflict-banner-icon">🚫</span>
+          <div className="workflow-conflict-banner-content">
+            <strong>QUYỀN TRUY CẬP BỊ TỪ CHỐI (HTTP 403 FORBIDDEN) - ĐÃ CẬP NHẬT TRẠNG THÁI:</strong>
+            <p>{forbiddenNotice.message}</p>
+            <div className="workflow-conflict-note">
+              <span>🔒 <strong>Bảo toàn dữ liệu:</strong> Toàn bộ nội dung bạn vừa nhập vẫn được bảo lưu an toàn.</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-close-notice"
+            onClick={() => setForbiddenNotice(null)}
+            aria-label="Đóng thông báo 403"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -607,6 +686,8 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'triage'}
+            tabIndex={currentTab === 'triage' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'triage')}
             className={`workflow-subnav-pill ${currentTab === 'triage' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('triage')}
           >
@@ -619,6 +700,8 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'ack'}
+            tabIndex={currentTab === 'ack' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'ack')}
             className={`workflow-subnav-pill ${currentTab === 'ack' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('ack')}
           >
@@ -631,6 +714,8 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'resolve'}
+            tabIndex={currentTab === 'resolve' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'resolve')}
             className={`workflow-subnav-pill ${currentTab === 'resolve' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('resolve')}
           >
@@ -643,6 +728,8 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'close'}
+            tabIndex={currentTab === 'close' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'close')}
             className={`workflow-subnav-pill ${currentTab === 'close' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('close')}
           >
@@ -655,6 +742,8 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'reopen'}
+            tabIndex={currentTab === 'reopen' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'reopen')}
             className={`workflow-subnav-pill ${currentTab === 'reopen' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('reopen')}
           >
@@ -667,6 +756,8 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'assign'}
+            tabIndex={currentTab === 'assign' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'assign')}
             className={`workflow-subnav-pill ${currentTab === 'assign' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('assign')}
           >
@@ -679,10 +770,12 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'priority'}
+            tabIndex={currentTab === 'priority' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'priority')}
             className={`workflow-subnav-pill ${currentTab === 'priority' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('priority')}
           >
-            ⏱️ Đổi Priority
+            🎯 Đổi mức ưu tiên
           </button>
         )}
 
@@ -691,10 +784,12 @@ export function StaffWorkflowActions({
             type="button"
             role="tab"
             aria-selected={currentTab === 'disposition'}
+            tabIndex={currentTab === 'disposition' ? 0 : -1}
+            onKeyDown={(e) => handleTabKeyDown(e, 'disposition')}
             className={`workflow-subnav-pill ${currentTab === 'disposition' ? 'active' : ''}`}
             onClick={() => setActiveActionTab('disposition')}
           >
-            📋 Trùng / Không hợp lệ
+            🛑 Báo trùng / Đóng đơn
           </button>
         )}
       </div>
@@ -805,6 +900,16 @@ export function StaffWorkflowActions({
                   disabled={isSubmittingTriage}
                 >
                   ⚡ Giả lập xung đột 409 (Test)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-simulate-forbidden"
+                  title="Mô phỏng lỗi HTTP 403 Forbidden"
+                  onClick={() => handleCatchError('Triage phân loại', { error: { code: 'forbidden', status: 403, message: 'Quyền truy cập bị từ chối: Bạn không có thẩm quyền phân loại sự cố này.' } }, setTriageFieldErrors)}
+                  disabled={isSubmittingTriage}
+                  style={{ marginLeft: '8px' }}
+                >
+                  🚫 Giả lập 403 (Test)
                 </button>
               </div>
 
@@ -944,6 +1049,16 @@ export function StaffWorkflowActions({
                 >
                   ⚡ Giả lập xung đột 409 (Test)
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-simulate-forbidden"
+                  title="Mô phỏng lỗi HTTP 403 Forbidden"
+                  onClick={() => handleCatchError('Phân công sự cố', { error: { code: 'forbidden', status: 403, message: 'Quyền truy cập bị từ chối: Bạn không có thẩm quyền phân công sự cố này.' } }, setAssignFieldErrors)}
+                  disabled={isSubmittingAssign || !permissions.canAssign}
+                  style={{ marginLeft: '8px' }}
+                >
+                  🚫 Giả lập 403 (Test)
+                </button>
               </div>
 
               <div className="workflow-footer-right">
@@ -990,7 +1105,19 @@ export function StaffWorkflowActions({
                   Chọn mức độ ưu tiên mới <span className="workflow-field-label-required">(*)</span>
                 </span>
                 <div className="priority-select-cards" role="radiogroup" aria-label="Mức độ ưu tiên">
-                  <label className={`priority-select-card card-p1 ${newPriority === 'p1' ? 'selected' : ''}`}>
+                  <label
+                    tabIndex={permissions.canAdjustPriority ? 0 : -1}
+                    role="radio"
+                    aria-checked={newPriority === 'p1'}
+                    aria-label="P1 - Khẩn cấp, Hạn tiếp nhận: 15 phút"
+                    className={`priority-select-card card-p1 ${newPriority === 'p1' ? 'selected' : ''}`}
+                    onKeyDown={(e) => {
+                      if (permissions.canAdjustPriority && (e.key === ' ' || e.key === 'Enter')) {
+                        e.preventDefault()
+                        setNewPriority('p1')
+                      }
+                    }}
+                  >
                     <input
                       type="radio"
                       name="priority-choice"
@@ -1006,7 +1133,19 @@ export function StaffWorkflowActions({
                     </div>
                   </label>
 
-                  <label className={`priority-select-card card-p2 ${newPriority === 'p2' ? 'selected' : ''}`}>
+                  <label
+                    tabIndex={permissions.canAdjustPriority ? 0 : -1}
+                    role="radio"
+                    aria-checked={newPriority === 'p2'}
+                    aria-label="P2 - Cao, Hạn tiếp nhận: 2 giờ"
+                    className={`priority-select-card card-p2 ${newPriority === 'p2' ? 'selected' : ''}`}
+                    onKeyDown={(e) => {
+                      if (permissions.canAdjustPriority && (e.key === ' ' || e.key === 'Enter')) {
+                        e.preventDefault()
+                        setNewPriority('p2')
+                      }
+                    }}
+                  >
                     <input
                       type="radio"
                       name="priority-choice"
@@ -1022,7 +1161,19 @@ export function StaffWorkflowActions({
                     </div>
                   </label>
 
-                  <label className={`priority-select-card card-p3 ${newPriority === 'p3' ? 'selected' : ''}`}>
+                  <label
+                    tabIndex={permissions.canAdjustPriority ? 0 : -1}
+                    role="radio"
+                    aria-checked={newPriority === 'p3'}
+                    aria-label="P3 - Tiêu chuẩn, Hạn tiếp nhận: 8 giờ"
+                    className={`priority-select-card card-p3 ${newPriority === 'p3' ? 'selected' : ''}`}
+                    onKeyDown={(e) => {
+                      if (permissions.canAdjustPriority && (e.key === ' ' || e.key === 'Enter')) {
+                        e.preventDefault()
+                        setNewPriority('p3')
+                      }
+                    }}
+                  >
                     <input
                       type="radio"
                       name="priority-choice"
