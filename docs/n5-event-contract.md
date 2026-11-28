@@ -418,3 +418,35 @@ Mốc W10 tập trung kiểm thử toàn diện các tình huống gián đoạn
 ### 6. Bộ Kiểm Thử Chấp Nhận W10
 Toàn bộ kịch bản kiểm thử T13–T15 được thực thi tự động tại:
 `backend/tests/test_automation_w10_integration.py` (7/7 tests đạt 100%).
+
+## 16. Runbook Vận Hành, Dựng n8n Sạch và Xử Lý Sự Cố (W11)
+
+Mốc W11 hoàn thiện bộ hướng dẫn vận hành chuẩn (SOP / Runbook) giúp bất kỳ kỹ sư hoặc thành viên nào trong dự án có thể dễ dàng dựng môi trường n8n hoàn toàn mới, cấu hình credentials bảo mật, import và kích hoạt các workflow tự động hóa, kiểm tra hàng chờ lỗi (DLQ) và thực hiện các quy trình phục hồi hệ thống.
+
+Chi tiết toàn bộ tài liệu runbook nằm tại:
+👉 **[docs/n5-runbook.md](n5-runbook.md)**
+
+### Nội dung cốt lõi của Runbook W11:
+1. **Dựng môi trường n8n sạch**: Các bước dọn dẹp volume cũ, khởi chạy dịch vụ n8n bằng Docker Compose và khởi tạo tài khoản Owner an toàn lần đầu.
+2. **Quản lý Credentials ngoài Git**:
+   - Khởi tạo Header Auth credential `CIM Internal Service Bearer` (`Authorization: Bearer <token>`).
+   - Khởi tạo `CIM_WEBHOOK_HMAC_SECRET` để ký số webhook.
+   - Bật cờ `MOCK_EMAIL_SENDING=true` phục vụ kiểm thử gửi mail an toàn trong môi trường phát triển.
+3. **Danh mục 4 workflow chính thức**:
+   - `health-check.json` (ID: `CIMHealthCheck001`): Manual Trigger kiểm tra backend liveness.
+   - `event-processor.json` (ID: `CIMEventProcessor001`): Webhook xác thực chữ ký HMAC, chống trùng lặp và gọi evaluate incident.
+   - `notification-processor.json` (ID: `CIMNotificationProcessor001`): Webhook chuyển tiếp an toàn tới `/internal/notifications/dispatch`, tuân thủ Content Safety Guard.
+   - `sla-check.json` (ID: `CIMSlaScheduleCheck001`): Schedule trigger định kỳ 1 phút gọi `/internal/sla/check`, báo một lần/mức.
+4. **Kiểm tra hàng chờ lỗi (DLQ)**:
+   - Tra cứu qua REST API: `GET /internal/events/failed` và `GET /internal/dead-letter/summary`.
+   - Tra cứu qua Worker CLI: `--list-failed`, `--list-notifications --status <status>`.
+   - **Bất biến an toàn**: Trạng thái `uncertain` tuyệt đối không bao giờ được tự động gửi lại.
+5. **Quy trình phục hồi hệ thống**:
+   - Phục hồi khi worker crash / unclean shutdown với cờ `--recover`.
+   - Re-queue sự kiện lỗi và thông báo thủ công bắt buộc phải có giải thích `--reason "<lý do>"`.
+6. **Kịch bản kiểm thử nghiệm thu mẫu**:
+   - Test gửi email giả lập (reported, assigned, P1, public_state_updated).
+   - Test gửi webhook đã ký HMAC (`scripts/send-signed-event.py`) kiểm tra duplicate và clock skew.
+   - Mô phỏng n8n down và phục hồi qua worker.
+   - Kích hoạt rà soát SLA tức thời với `--check-sla`.
+

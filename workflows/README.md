@@ -1,5 +1,7 @@
 # Workflow n8n
 
+> **Tài liệu vận hành chuẩn**: Xem hướng dẫn chi tiết toàn diện về dựng n8n sạch, cấu hình credentials ngoài Git, import 4 workflow, kiểm tra hàng chờ lỗi và phục hồi sự cố tại [N5 Runbook](../docs/n5-runbook.md).
+
 ## 1. Workflow kiểm tra kết nối (`health-check.json`)
 
 `health-check.json` là workflow mẫu **inactive**: Manual Trigger → HTTP GET backend liveness. Không có credentials hoặc xử lý incident. Workflow đã được import và chạy thành công trên n8n Docker; HTTP node nhận `status=ok` từ backend. ID mẫu: `CIMHealthCheck001`. Workflow vẫn inactive và chỉ chạy thủ công.
@@ -179,3 +181,15 @@ backend\.venv\Scripts\python.exe -m pytest -q backend/tests/test_automation_w8_i
   - Người báo chỉ nhận thông tin và đường dẫn công khai `/incidents/{id}`.
   - Tuyệt đối lọc bỏ mọi ghi chú nội bộ (`internal_notes`, `[internal]`), link staff (`/staff/*`) hoặc bí mật.
   - Áp dụng khóa chống trùng `(event_id, 'public_state_updated', recipient_user_id)`: retry từ n8n không tạo thêm email lặp ngoài chính sách.
+
+---
+
+## 7. Runbook Vận Hành, Dựng n8n Sạch và Xử Lý Sự Cố (N5 W11)
+
+Tài liệu [docs/n5-runbook.md](../docs/n5-runbook.md) cung cấp hướng dẫn vận hành chuẩn (SOP) chi tiết:
+- Dựng môi trường n8n sạch từ đầu với Docker Compose và tạo owner account.
+- Cấu hình Header Auth credential `CIM Internal Service Bearer` và HMAC secret ngoài Git.
+- Quy trình import và kích hoạt cả 4 workflow (`health-check.json`, `event-processor.json`, `notification-processor.json`, `sla-check.json`) qua UI và CLI.
+- Kiểm tra hàng chờ lỗi (Dead-Letter Queue) qua API `/internal/events/failed`, `/internal/dead-letter/summary` và Worker CLI `--list-failed`, `--list-notifications`.
+- Quy trình phục hồi sau khi worker crash (`--recover`) và retry có lý do bắt buộc (`--retry-event`, `--retry-notification` kèm `--reason`).
+- Kịch bản kiểm thử nghiệm thu mẫu: Test email giả lập, gửi signed event giả lập, mô phỏng n8n down và kích hoạt SLA check.
