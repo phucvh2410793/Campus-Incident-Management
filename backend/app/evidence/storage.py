@@ -5,10 +5,18 @@ import re
 from pathlib import Path
 
 MAX_BYTES = 10 * 1024 * 1024
+PDF_ACTIVE_CONTENT = re.compile(
+    rb"/\s*(?:JavaScript|JS|OpenAction|AA|Launch|RichMedia|EmbeddedFile)\b",
+    re.IGNORECASE,
+)
 
 
 def detect_content_type(data: bytes) -> str | None:
-    if data.startswith(b"%PDF-") and data.rstrip().endswith(b"%%EOF"):
+    if (
+        data.startswith(b"%PDF-")
+        and data.rstrip().endswith(b"%%EOF")
+        and PDF_ACTIVE_CONTENT.search(data) is None
+    ):
         return "application/pdf"
     if data.startswith(b"\x89PNG\r\n\x1a\n") and b"IEND" in data[-32:]:
         return "image/png"
