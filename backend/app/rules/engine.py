@@ -123,6 +123,7 @@ def evaluate_incident(
         triage_required=True,
     )
 
+
 def evaluate_rule_version(category, answers, rule_version):
     """Evaluate an incident using a stored RuleVersion."""
 
@@ -132,10 +133,7 @@ def evaluate_rule_version(category, answers, rule_version):
 
         condition = rule["condition"]
 
-        if not all(
-            answers.get(key) == value
-            for key, value in condition.items()
-        ):
+        if not all(answers.get(key) == value for key, value in condition.items()):
             continue
 
         return RuleResult(

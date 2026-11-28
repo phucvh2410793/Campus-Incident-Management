@@ -1,4 +1,3 @@
-
 """Create incidents and read them within the caller's record scope."""
 
 import base64
@@ -8,24 +7,22 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, select, text, tuple_
+from sqlalchemy import and_, select, text, tuple_, update
 from sqlalchemy.orm import Session
 
-from app.sla.policy import calculate_deadline
 from app.auth.policy import IncidentPolicy, Principal
 from app.automation.publisher import OutboxEventPublisher
 from app.automation.schemas import EventType
 from app.incidents.models import IdempotencyRecord, Incident
-from app.incidents.schemas import IncidentCreateRequest
+from app.incidents.schemas import IncidentCreateRequest, ManualTriageRequest
 from app.models import Department
-from app.rules.engine import evaluate_incident
+from app.rules.engine import MANUAL_QUEUE, evaluate_incident, evaluate_rule_version
 from app.rules.models import RuleEvaluation, RuleVersion
-from app.incidents.schemas import ManualTriageRequest
+from app.sla.policy import calculate_deadline
 from app.workflow.contracts import WorkflowViolation
 from app.workflow.models import AuditLog
 from app.workflow.repository import WorkflowRepository
-from app.rules.engine import MANUAL_QUEUE
-from app.rules.engine import evaluate_rule_version
+
 
 class IdempotencyKeyConflict(Exception):
     pass
@@ -101,8 +98,7 @@ def list_incidents(
 
     if cursor is not None:
         query = query.where(
-            tuple_(Incident.reported_at, Incident.id)
-            < tuple_(*decode_cursor(cursor))
+            tuple_(Incident.reported_at, Incident.id) < tuple_(*decode_cursor(cursor))
         )
 
     rows = db.scalars(
@@ -149,9 +145,7 @@ def create_incident(
 
             incident = db.get(Incident, record.incident_id)
             if incident is None:
-                raise RuntimeError(
-                    "Idempotency record refers to a missing incident"
-                )
+                raise RuntimeError("Idempotency record refers to a missing incident")
 
             return incident, False
 
@@ -172,16 +166,10 @@ def create_incident(
         )
 
         if rule_version is None:
-            raise RuntimeError(
-                f"Active rule version not found: {result.rule_version}"
-            )
+            raise RuntimeError(f"Active rule version not found: {result.rule_version}")
 
         # Find the department selected by the rule engine.
-        department = db.scalar(
-            select(Department).where(
-                Department.name == result.department
-            )
-        )
+        department = db.scalar(select(Department).where(Department.name == result.department))
 
         if department is None:
             raise RuntimeError(
@@ -198,9 +186,7 @@ def create_incident(
             building=payload.building,
             location_detail=payload.location_detail,
             observed_at=(
-                datetime.fromisoformat(
-                    payload.observed_at.replace("Z", "+00:00")
-                )
+                datetime.fromisoformat(payload.observed_at.replace("Z", "+00:00"))
                 if payload.observed_at
                 else None
             ),
@@ -209,9 +195,7 @@ def create_incident(
             severity=result.severity,
             priority=result.priority,
             acknowledgment_deadline_at=(
-                calculate_deadline(now, result.priority)
-                if result.priority is not None
-                else None
+                calculate_deadline(now, result.priority) if result.priority is not None else None
             ),
             department_id=department.id,
             triage_required=result.triage_required,
@@ -261,6 +245,7 @@ def create_incident(
         db.rollback()
         raise
 
+
 def get_rule_evaluation_history(db, principal, incident_id):
     incident = db.scalar(
         select(Incident).where(
@@ -280,6 +265,7 @@ def get_rule_evaluation_history(db, principal, incident_id):
             RuleEvaluation.id.asc(),
         )
     ).all()
+
 
 def manual_triage(
     db,
@@ -325,9 +311,7 @@ def manual_triage(
         current_evaluation = incident.rule_evaluation or {}
         version_name = current_evaluation.get("rule_version", "demo-v1")
 
-        rule_version = db.scalar(
-            select(RuleVersion).where(RuleVersion.version == version_name)
-        )
+        rule_version = db.scalar(select(RuleVersion).where(RuleVersion.version == version_name))
 
         if rule_version is None:
             raise WorkflowViolation("rule_version_not_found", 409)
@@ -354,9 +338,7 @@ def manual_triage(
             .values(
                 department_id=department.id,
                 assigned_handler_id=(
-                    None
-                    if old_department_id != department.id
-                    else incident.assigned_handler_id
+                    None if old_department_id != department.id else incident.assigned_handler_id
                 ),
                 severity=payload.severity,
                 priority=payload.priority,
@@ -428,6 +410,7 @@ def manual_triage(
 
     return incident
 
+
 def reevaluate_incident(
     db,
     principal,
@@ -471,11 +454,7 @@ def reevaluate_incident(
             rule_version,
         )
 
-        department = db.scalar(
-            select(Department).where(
-                Department.name == result.department
-            )
-        )
+        department = db.scalar(select(Department).where(Department.name == result.department))
 
         if department is None:
             raise WorkflowViolation("department_not_found", 409)
@@ -491,7 +470,6 @@ def reevaluate_incident(
             "severity": incident.severity,
             "priority": incident.priority,
             "triage_required": incident.triage_required,
-            "rule_evaluation": incident.rule_evaluation,
             "version": incident.version,
         }
 
@@ -505,9 +483,7 @@ def reevaluate_incident(
             )
             .values(
                 department_id=new_department_id,
-                assigned_handler_id=(
-                    None if changed_department else incident.assigned_handler_id
-                ),
+                assigned_handler_id=(None if changed_department else incident.assigned_handler_id),
                 severity=result.severity,
                 priority=result.priority,
                 acknowledgment_deadline_at=(
@@ -548,7 +524,6 @@ def reevaluate_incident(
             "severity": incident.severity,
             "priority": incident.priority,
             "triage_required": incident.triage_required,
-            "rule_evaluation": incident.rule_evaluation,
             "version": incident.version,
             "department_changed": changed_department,
         }

@@ -139,6 +139,7 @@ class IncidentPage(BaseModel):
     items: list[IncidentSummary]
     next_cursor: str | None
 
+
 class ManualTriageRequest(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -166,6 +167,7 @@ class RuleEvaluationResponse(BaseModel):
     triage_required: bool
     safety_flags: list[str]
     evaluated_at: datetime
+
 
 class ReevaluateIncidentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")

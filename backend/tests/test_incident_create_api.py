@@ -7,6 +7,17 @@ from sqlalchemy import func, select
 from app.automation.models import OutboxEvent
 from app.automation.publisher import OutboxEventPublisher
 from app.incidents.models import IdempotencyRecord, Incident
+from app.models import Department
+
+
+@pytest.fixture(autouse=True)
+def rule_departments(db_session):
+    """Exercise rule routing with the same departments supplied by the demo seed."""
+    for name in ("Cơ sở vật chất", "Điện và an toàn", "IT/Security"):
+        if db_session.scalar(select(Department).where(Department.name == name)) is None:
+            db_session.add(Department(name=name))
+    db_session.flush()
+
 
 WATER_LEAK = {
     "category": "water_leak",
@@ -28,8 +39,8 @@ def test_create_replay_and_conflict(client, auth_headers, db_session, test_user)
     assert result["reporter_id"] == str(test_user.id)
     assert result["status"] == "reported"
     assert result["version"] == 1
-    assert result["priority"] is None
-    assert result["department_id"] is None
+    assert result["priority"] == "p3"
+    assert result["department_id"] is not None
 
     replay = client.post("/api/v1/incidents", json=WATER_LEAK, headers=headers)
     assert replay.status_code == 200
