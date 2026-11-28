@@ -36,20 +36,40 @@ def backup_database(db_url: str | None = None, out_path: str | None = None) -> P
         target_file.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"[*] Starting backup from {clean_url.split('@')[-1]}...")
-    cmd = [
-        "pg_dump",
-        "--clean",
-        "--if-exists",
-        "--no-owner",
-        "--no-privileges",
-        "-d",
-        clean_url,
-        "-f",
-        str(target_file),
-    ]
 
     try:
-        subprocess.run(cmd, check=True)
+        if target_file.suffix == ".gz":
+            import gzip
+
+            temp_file = target_file.with_suffix(".tmp")
+            cmd = [
+                "pg_dump",
+                "--clean",
+                "--if-exists",
+                "--no-owner",
+                "--no-privileges",
+                "-d",
+                clean_url,
+                "-f",
+                str(temp_file),
+            ]
+            subprocess.run(cmd, check=True)
+            with open(temp_file, "rb") as f_in, gzip.open(target_file, "wb") as f_out:
+                f_out.writelines(f_in)
+            temp_file.unlink(missing_ok=True)
+        else:
+            cmd = [
+                "pg_dump",
+                "--clean",
+                "--if-exists",
+                "--no-owner",
+                "--no-privileges",
+                "-d",
+                clean_url,
+                "-f",
+                str(target_file),
+            ]
+            subprocess.run(cmd, check=True)
         size_kb = target_file.stat().st_size / 1024
         print(f"[✓] Backup completed successfully: {target_file} ({size_kb:.1f} KB)")
         return target_file

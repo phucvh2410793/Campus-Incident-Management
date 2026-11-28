@@ -30,10 +30,21 @@ def restore_database(backup_file: str, db_url: str | None = None) -> None:
     )
 
     print(f"[*] Restoring database to {clean_url.split('@')[-1]} from {src_file.name}...")
-    cmd = ["psql", "-d", clean_url, "-f", str(src_file)]
 
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+        if src_file.suffix == ".gz":
+            import gzip
+
+            with gzip.open(src_file, "rb") as gz_in:
+                subprocess.run(
+                    ["psql", "-d", clean_url],
+                    input=gz_in.read(),
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                )
+        else:
+            cmd = ["psql", "-d", clean_url, "-f", str(src_file)]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
         print(f"[✓] Database restore completed successfully from {src_file.name}!")
     except subprocess.CalledProcessError as exc:
         print(f"[✗] psql restore failed with exit code {exc.returncode}", file=sys.stderr)

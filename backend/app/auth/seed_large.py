@@ -532,3 +532,26 @@ def create_scoped_incidents_for_matrix(
     incidents["it_unassigned"] = inc4
 
     return incidents
+
+
+def main() -> None:
+    import os
+
+    from app.db import SessionLocal
+
+    password = os.environ.get("CIM_SEED_PASSWORD", DEFAULT_LARGE_PASSWORD)
+    db = SessionLocal()
+    try:
+        print(f"[*] Seeding large multi-role dataset (password: {password})...")
+        dataset = seed_large_dataset(db, password)
+        incidents = create_scoped_incidents_for_matrix(db, dataset)
+        print(
+            f"[✓] Successfully seeded {len(dataset.departments)} departments, "
+            f"{len(dataset.users)} users, and {len(incidents)} matrix incidents!"
+        )
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
