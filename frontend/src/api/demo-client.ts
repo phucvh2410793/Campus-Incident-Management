@@ -41,41 +41,23 @@ export const demoClient = {
   checkBackendHealth: () => staffApiAdapter.checkBackendHealth(),
 
   async login(email: string, password?: string): Promise<DemoSession> {
-    const defaultPassword = 'Demo-Large-Seed-2026!'
-    const pwd = password || defaultPassword
-
-    // If adapter mode is set to real or if we attempt real backend first
-    if (staffApiAdapter.getMode() === 'real' || typeof window !== 'undefined') {
-      try {
-        const resp = await fetch('/api/v1/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password: pwd }),
-        })
-
-        if (resp.ok) {
-          const data = await resp.json()
-          session = { user: data.user, accessToken: data.access_token }
-          staffApiAdapter.setBearerToken(data.access_token)
-          return session
-        }
-
-        if (resp.status === 401 || resp.status === 429 || resp.status === 422) {
-          const errData = await resp.json().catch(() => ({}))
-          const message = errData?.error?.message || (resp.status === 429 ? 'Quá nhiều lần đăng nhập sai. Hãy thử lại sau.' : 'Email hoặc mật khẩu không đúng.')
-          throw new Error(message)
-        }
-      } catch (err) {
-        // If it was a deliberate credential or rate-limit error, rethrow
-        if (err instanceof Error && (err.message.includes('không đúng') || err.message.includes('Quá nhiều') || err.message.includes('hết hạn'))) {
-          throw err
-        }
-        // If mode is strictly 'real', do not hide server errors
-        if (staffApiAdapter.getMode() === 'real') {
-          throw err
-        }
-        // Otherwise, fall back to mock demo when backend is offline
+    if (staffApiAdapter.getMode() === 'real') {
+      if (!password) throw new Error('Vui lòng nhập mật khẩu.')
+      const resp = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}))
+        throw new Error(body?.error?.message || (resp.status === 429
+          ? 'Quá nhiều lần đăng nhập sai. Hãy thử lại sau.'
+          : 'Email hoặc mật khẩu không đúng.'))
       }
+      const data = await resp.json()
+      session = { user: data.user, accessToken: data.access_token }
+      staffApiAdapter.setBearerToken(data.access_token)
+      return session
     }
 
     const result = await mockApi.login({ email })

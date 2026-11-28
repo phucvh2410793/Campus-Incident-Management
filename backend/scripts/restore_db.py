@@ -18,12 +18,9 @@ def restore_database(backup_file: str, db_url: str | None = None) -> None:
         print(f"[✗] Backup file not found: {src_file}", file=sys.stderr)
         sys.exit(1)
 
-    url = (
-        db_url
-        or os.environ.get("DATABASE_URL")
-        or os.environ.get("TEST_DATABASE_URL")
-        or "postgresql://phileblinh@localhost:5432/campus_incident_test"
-    )
+    url = db_url or os.environ.get("DATABASE_URL") or os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        raise ValueError("DATABASE_URL or --db-url is required")
 
     clean_url = url.replace("postgresql+psycopg://", "postgresql://").replace(
         "postgresql+asyncpg://", "postgresql://"

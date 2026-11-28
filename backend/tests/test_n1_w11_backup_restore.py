@@ -9,13 +9,13 @@ Validates:
 """
 
 import os
-import subprocess
 import tempfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db
@@ -31,27 +31,27 @@ from scripts.restore_db import restore_database
 from scripts.verify_restore import verify_database_restore
 
 CLEAN_TEST_DB_NAME = "campus_incident_restore_test"
-CLEAN_TEST_DB_URL = f"postgresql+psycopg://phileblinh@localhost:5432/{CLEAN_TEST_DB_NAME}"
-
-
 @pytest.fixture(scope="module")
 def clean_postgres_db():
     """Create a completely clean PostgreSQL database and drop it when done."""
-    subprocess.run(["dropdb", "--if-exists", "--force", CLEAN_TEST_DB_NAME], check=False)
-    subprocess.run(["createdb", CLEAN_TEST_DB_NAME], check=True)
+    source_url = make_url(os.environ["TEST_DATABASE_URL"])
+    clean_url = source_url.set(database=CLEAN_TEST_DB_NAME)
+    admin_engine = create_engine(source_url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f"DROP DATABASE IF EXISTS {CLEAN_TEST_DB_NAME} WITH (FORCE)"))
+        conn.execute(text(f"CREATE DATABASE {CLEAN_TEST_DB_NAME}"))
     try:
-        yield CLEAN_TEST_DB_URL
+        yield clean_url.render_as_string(hide_password=False)
     finally:
-        subprocess.run(["dropdb", "--if-exists", "--force", CLEAN_TEST_DB_NAME], check=False)
+        with admin_engine.connect() as conn:
+            conn.execute(text(f"DROP DATABASE IF EXISTS {CLEAN_TEST_DB_NAME} WITH (FORCE)"))
+        admin_engine.dispose()
 
 
 def test_backup_and_restore_on_clean_database_allows_all_roles_to_login(
     test_engine, clean_postgres_db
 ):
-    source_url = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql://phileblinh@localhost:5432/campus_incident_test",
-    )
+    source_url = os.environ["TEST_DATABASE_URL"]
 
     # 1. Commit seed dataset to source PostgreSQL database so external pg_dump can read it
     with test_engine.connect() as conn:

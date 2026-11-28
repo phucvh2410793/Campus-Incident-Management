@@ -21,16 +21,12 @@ from sqlalchemy.orm import Session
 from app.auth.security import verify_password
 from app.models import Department, User
 
-DEFAULT_PASSWORD = "Demo-Large-Seed-2026!"
 
-
-def verify_database_restore(db_url: str | None = None, password: str = DEFAULT_PASSWORD) -> bool:
-    url = (
-        db_url
-        or os.environ.get("DATABASE_URL")
-        or os.environ.get("TEST_DATABASE_URL")
-        or "postgresql+psycopg://phileblinh@localhost:5432/campus_incident_test"
-    )
+def verify_database_restore(db_url: str | None = None, password: str | None = None) -> bool:
+    url = db_url or os.environ.get("DATABASE_URL") or os.environ.get("TEST_DATABASE_URL")
+    password = password or os.environ.get("CIM_LARGE_SEED_PASSWORD")
+    if not url or not password:
+        raise ValueError("DATABASE_URL and CIM_LARGE_SEED_PASSWORD are required")
 
     print(f"[*] Verifying database at {url.split('@')[-1]}...")
     engine = create_engine(url)
@@ -72,6 +68,7 @@ def verify_database_restore(db_url: str | None = None, password: str = DEFAULT_P
                 )
             else:
                 print(f"[!] Role '{role}' user '{test_user.email}' did not match password.")
+                all_passed = False
 
         return all_passed
 
@@ -79,7 +76,7 @@ def verify_database_restore(db_url: str | None = None, password: str = DEFAULT_P
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify database restore integrity and logins")
     parser.add_argument("--db-url", help="Database URL")
-    parser.add_argument("--password", default=DEFAULT_PASSWORD, help="Seed password to check")
+    parser.add_argument("--password", help="Large-seed password; prefer CIM_LARGE_SEED_PASSWORD")
     args = parser.parse_args()
 
     success = verify_database_restore(args.db_url, args.password)

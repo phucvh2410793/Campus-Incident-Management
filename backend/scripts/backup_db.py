@@ -14,12 +14,9 @@ from pathlib import Path
 
 
 def backup_database(db_url: str | None = None, out_path: str | None = None) -> Path:
-    url = (
-        db_url
-        or os.environ.get("DATABASE_URL")
-        or os.environ.get("TEST_DATABASE_URL")
-        or "postgresql://phileblinh@localhost:5432/campus_incident_test"
-    )
+    url = db_url or os.environ.get("DATABASE_URL") or os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        raise ValueError("DATABASE_URL or --db-url is required")
 
     # Normalize url from sqlalchemy style if necessary
     clean_url = url.replace("postgresql+psycopg://", "postgresql://").replace(
