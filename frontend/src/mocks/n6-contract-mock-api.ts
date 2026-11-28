@@ -36,6 +36,7 @@ export interface MockAttachmentInput {
   sizeBytes: number
   mimeType: string
   signature?: number[]
+  file?: File
 }
 
 export interface PaginatedResult<T> {

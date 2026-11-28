@@ -74,6 +74,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="mandatory explanation required for administrative retry operations",
     )
+    # W8 Periodic SLA check
+    parser.add_argument(
+        "--check-sla",
+        action="store_true",
+        help="trigger one SLA deadline review cycle and report escalations",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -148,6 +154,26 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             print(f"Notification {notif_id} not found")
             return 1
+
+    if args.check_sla:
+        from datetime import UTC, datetime
+
+        from app.sla.service import SlaEscalationService
+
+        with SessionLocal() as session:
+            try:
+                checked, created = SlaEscalationService(session).check(now=datetime.now(UTC))
+                session.commit()
+                print(
+                    f"SLA check completed: {checked} incident(s) checked, "
+                    f"{created} escalation(s) created"
+                )
+                return 0
+            except Exception as e:
+                session.rollback()
+                logger.exception("SLA check failed: %s", e)
+                print(f"Error: SLA check failed: {e}")
+                return 1
 
     # 2. Normal worker dispatch operations
     settings = OutboxSettings.from_env()

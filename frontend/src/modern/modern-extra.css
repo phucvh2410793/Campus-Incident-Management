@@ -7,7 +7,7 @@
 .m-brand-mark{font-size:13px;letter-spacing:-.06em}.m-sidebar-brand strong{font-size:12px;line-height:1.35}.m-auth-brand strong{font-size:15px}.m-topbar>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:600px){.m-topbar>span{max-width:calc(100vw - 115px)}}
 
-/* N7-W09: Focus indicators, Adapter Toggle, Error recovery banners, Mobile touch targets */
+/* N6-W09 / N7-W09: Focus indicators, Adapter Toggle, Error recovery banners, Mobile touch targets */
 :focus-visible {
   outline: 2px solid #075985;
   outline-offset: 2px;
@@ -16,6 +16,11 @@
   outline: 2px solid #075985;
   outline-offset: -2px;
   background: #f0f7fb;
+}
+.m-category-choice:focus-visible {
+  outline: 2px solid #075985;
+  outline-offset: 2px;
+  border-color: #075985;
 }
 .m-adapter-toggle {
   display: inline-flex;
@@ -75,6 +80,7 @@
   }
   .m-button,
   .m-action-choice,
+  .m-category-choice,
   .m-adapter-toggle {
     min-height: 44px;
   }

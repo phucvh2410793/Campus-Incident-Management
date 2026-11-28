@@ -121,6 +121,7 @@ def test_attachment_upload_list_download_and_scope(
     download = client.get(f"{url}/{body['id']}/download", headers=auth_headers)
     assert download.status_code == 200 and download.content == PDF
     assert download.headers["cache-control"] == "no-store"
+    assert download.headers["content-security-policy"] == "sandbox"
     assert download.headers["x-content-type-options"] == "nosniff"
     assert "attachment" in download.headers["content-disposition"]
     assert client.get(url, headers=other_headers).status_code == 404
@@ -145,8 +146,13 @@ def test_attachment_upload_list_download_and_scope(
         ("wrong.png", PDF, "image/png"),
         ("empty.pdf", b"", "application/pdf"),
         ("huge.pdf", b"%PDF-" + b"x" * (10 * 1024 * 1024), "application/pdf"),
+        (
+            "active.pdf",
+            b"%PDF-1.4\n1 0 obj<</S /JavaScript /JS (alert(1))>>endobj\n%%EOF",
+            "application/pdf",
+        ),
     ],
-    ids=["fake-pdf", "wrong-png", "empty-pdf", "huge-pdf"],
+    ids=["fake-pdf", "wrong-png", "empty-pdf", "huge-pdf", "active-pdf"],
 )
 def test_invalid_files_leave_no_metadata_or_file(
     client, db_session, test_user, auth_headers, tmp_path, monkeypatch, name, data, mime
