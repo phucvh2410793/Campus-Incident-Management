@@ -1,24 +1,21 @@
 """N4 W8: full lifecycle through the real API on real PostgreSQL.
 
-Reporter creates a real incident (N2), a real demo-v1 rule evaluation (N3)
-decides its department and priority, then the whole lifecycle runs through
-the real workflow API with real N1 bearer tokens: assign -> acknowledge ->
-comment -> resolve -> close -> reopen -> disposition. No contract change:
-same request/response shapes and error codes as the service-level tests.
-Requires TEST_DATABASE_URL pointing at campus_incident_test (see
-docs/development.md).
+Reporter creates a real incident (N2); creation itself runs the real
+demo-v1 rule evaluation (N3) and decides department and priority, then the
+whole lifecycle runs through the real workflow API with real N1 bearer
+tokens: assign -> acknowledge -> comment -> resolve -> close -> reopen ->
+disposition. No contract change: same request/response shapes and error
+codes as the service-level tests. Requires TEST_DATABASE_URL pointing at
+campus_incident_test (see docs/development.md).
 """
 
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.incidents.models import Incident
 from app.models import Department, User
-from app.rules.engine import evaluate_incident
 
 PASSWORD = "w8-real-api-integration-pass"
 
@@ -86,26 +83,6 @@ def create_incident(client, headers):
     return response.json()
 
 
-def apply_rule(case, incident_id):
-    """Stand-in for N3's create/triage integration (their W8 branch).
-
-    Runs the real demo-v1 engine on the incident's answers and records the
-    result the way the triage integration will: department, priority,
-    severity and the evaluation payload.
-    """
-    incident = case.db.get(Incident, incident_id)
-    result = evaluate_incident(incident.category, incident.answers)
-    department = case.db.scalar(select(Department).where(Department.name == result.department))
-    assert department is not None, result
-    incident.department_id = department.id
-    incident.priority = result.priority
-    incident.severity = result.severity
-    incident.rule_evaluation = result.model_dump(mode="json")
-    incident.triage_required = False
-    case.db.commit()
-    return result
-
-
 def get_incident(client, headers, incident_id):
     response = client.get(f"/api/v1/incidents/{incident_id}", headers=headers)
     assert response.status_code == 200, response.text
@@ -117,13 +94,14 @@ def test_full_lifecycle_through_real_api(client, case):
     incident_id = UUID(created["id"])
     assert created["status"] == "reported"
     assert created["version"] == 1
-    assert created["priority"] is None
-    assert created["department_id"] is None
-
-    result = apply_rule(case, incident_id)
-    assert result.rule_id == "R03"
-    assert result.priority == "p1"
-    assert result.department == "Cơ sở vật chất"
+    # Creation itself applies the real demo-v1 rule (N3, merged in main):
+    # R03, priority p1, department "Cơ sở vật chất".
+    assert created["department_id"] == str(case.facilities.id)
+    assert created["priority"] == "p1"
+    assert created["severity"] == "high"
+    assert created["triage_required"] is False
+    assert created["rule_evaluation"]["rule_id"] == "R03"
+    assert created["acknowledgment_deadline_at"] is not None
 
     assigned = client.post(
         f"/api/v1/incidents/{incident_id}/assign",
@@ -233,7 +211,6 @@ def test_full_lifecycle_through_real_api(client, case):
 def test_comment_visibility_through_real_api(client, case):
     created = create_incident(client, case.headers["reporter"])
     incident_id = UUID(created["id"])
-    apply_rule(case, incident_id)
 
     assigned = client.post(
         f"/api/v1/incidents/{incident_id}/assign",
@@ -291,7 +268,6 @@ def test_comment_visibility_through_real_api(client, case):
 def test_workflow_error_codes_through_real_api(client, case):
     created = create_incident(client, case.headers["reporter"])
     incident_id = UUID(created["id"])
-    apply_rule(case, incident_id)
 
     assigned = client.post(
         f"/api/v1/incidents/{incident_id}/assign",
