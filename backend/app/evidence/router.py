@@ -190,6 +190,7 @@ def download_attachment(
         content_disposition_type="attachment",
         headers={
             "Cache-Control": "no-store",
+            "Content-Security-Policy": "sandbox",
             "X-Content-Type-Options": "nosniff",
             "X-Request-ID": str(_request_id(request)),
         },

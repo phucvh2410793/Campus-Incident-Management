@@ -2,6 +2,8 @@
 
 Model N2 hỗ trợ ba loại báo cáo MVP. SQLAlchemy model có trong `backend/app/incidents` và `backend/app/evidence`; migration `n2w2_incident_storage` tạo các bảng trên PostgreSQL. Request/response xem [API contract](api-contract.md), dữ liệu mẫu dùng chung xem [incidents.json](fixtures/incidents.json).
 
+Đo hiệu năng, kiểm tra khi automation tắt và cách backup/restore incident cùng evidence: [hướng dẫn vận hành N2](n2-operations.md).
+
 ## Bảng dữ liệu
 
 ### `incidents`
