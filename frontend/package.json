@@ -12,6 +12,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test:mock": "node --experimental-strip-types test-mock-api.ts",
+    "test:n1:w9": "node --experimental-strip-types test-n1-w9-auth.ts",
     "test:w2": "node --experimental-strip-types test-w2-client.ts",
     "test:n6:w4": "node --experimental-strip-types test-n6-w4.ts",
     "test:n6:w5": "node --experimental-strip-types test-n6-w5.ts",
