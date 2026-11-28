@@ -20,8 +20,8 @@ const admin = MOCK_USERS['user-admin']
 // ============================================================================
 console.log('--- 1. Kiểm tra Cấu hình Adapter & Cơ chế chuyển đổi Mode ---')
 
-assert.strictEqual(reporterApiAdapter.getMode(), 'mock')
-console.log('✓ Reporter API Adapter khởi tạo mặc định ở chế độ: "mock"')
+assert.strictEqual(reporterApiAdapter.getMode(), 'real')
+console.log('✓ Reporter API Adapter khởi tạo mặc định ở chế độ: "real"')
 
 reporterApiAdapter.setMode('real')
 assert.strictEqual(reporterApiAdapter.getMode(), 'real')

@@ -37,7 +37,7 @@ export interface ReporterIncidentParams {
 }
 
 export class ReporterApiAdapter {
-  private mode: ReporterAdapterMode = 'mock'
+  private mode: ReporterAdapterMode = 'real'
   private token: string | null = null
   private baseUrl = '/api/v1'
 
@@ -243,16 +243,14 @@ export class ReporterApiAdapter {
     reporterId?: string
   ): Promise<AttachmentSummary> {
     if (this.mode === 'real') {
+      if (!file.file) throw new Error('Cần chọn tệp thật trước khi tải lên.')
+      const form = new FormData()
+      form.append('file', file.file, file.filename)
+      form.append('expected_version', String(expectedVersion))
       const res = await fetch(`${this.baseUrl}/incidents/${incidentId}/attachments`, {
         method: 'POST',
-        headers: this.authHeaders(),
-        body: JSON.stringify({
-          filename: file.filename,
-          size_bytes: file.sizeBytes,
-          mime_type: file.mimeType,
-          signature: file.signature,
-          expected_version: expectedVersion,
-        }),
+        headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+        body: form,
       })
 
       if (!res.ok) await this.handleFetchError(res)
@@ -291,7 +289,7 @@ export class ReporterApiAdapter {
           total: data.items?.length || 0,
         }
       } catch (err) {
-        console.warn('Real API getMyIncidents failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 
@@ -331,7 +329,7 @@ export class ReporterApiAdapter {
         const data = await res.json()
         return Array.isArray(data) ? data : data.items || []
       } catch (err) {
-        console.warn('Real API getPublicHistory failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 
@@ -378,7 +376,7 @@ export class ReporterApiAdapter {
         const data = await res.json()
         return Array.isArray(data) ? data : data.items || []
       } catch (err) {
-        console.warn('Real API getAttachments failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 

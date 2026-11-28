@@ -479,7 +479,7 @@ function CreateReport({ onCancel, onDone }: { onCancel: () => void; onDone: () =
           const signature = Array.from(new Uint8Array(await file.slice(0, 8).arrayBuffer()))
           await demoClient.uploadAttachment(
             result.data.id,
-            { filename: file.name, sizeBytes: file.size, mimeType: file.type, signature },
+            { filename: file.name, sizeBytes: file.size, mimeType: file.type, signature, file },
             version
           )
           version++
@@ -995,6 +995,7 @@ function ReporterDetail({
           sizeBytes: newFile.size,
           mimeType: newFile.type,
           signature,
+          file: newFile,
         },
         detail.version
       )

@@ -42,11 +42,13 @@ export const demoClient = {
   setReporterAdapterMode: (mode: ReporterAdapterMode) => reporterApiAdapter.setMode(mode),
   checkBackendHealth: () => staffApiAdapter.checkBackendHealth(),
 
-  async login(email: string): Promise<DemoSession> {
-    const result = await mockApi.login({ email })
-    session = { user: result.user, accessToken: result.access_token }
-    staffApiAdapter.setBearerToken(result.access_token)
-    reporterApiAdapter.setBearerToken(result.access_token)
+  async login(email: string, password: string): Promise<DemoSession> {
+    const result = reporterApiAdapter.getMode() === 'real'
+      ? await reporterApiAdapter.login(email, password)
+      : await mockApi.login({ email }).then(value => ({ user: value.user, token: value.access_token }))
+    session = { user: result.user, accessToken: result.token }
+    staffApiAdapter.setBearerToken(result.token)
+    reporterApiAdapter.setBearerToken(result.token)
     return session
   },
 
@@ -60,7 +62,7 @@ export const demoClient = {
     if (!session || !['reporter', 'administrator'].includes(session.user.role)) {
       throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
     }
-    return (await mockApi.listIncidents(session.user)).items
+    return (await reporterApiAdapter.getMyIncidents(session.user.id, { limit: 100 })).items
   },
   async staffIncidents(
     filters: { status?: Status; priority?: Priority; department_id?: string; search?: string } = {}
@@ -80,12 +82,6 @@ export const demoClient = {
       throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
     }
     const res = await reporterApiAdapter.createIncident(input, idempotencyKey, session.user.id)
-    try {
-      const mockIncident = await mockApi.createIncident(session.user, input, idempotencyKey)
-      mockIncident.id = res.data.id
-    } catch {
-      // Best-effort sync
-    }
     return res
   },
   // N6-W06 / N6-W08: Tải lên từng tệp bằng chứng với expected_version qua Reporter Adapter
@@ -98,20 +94,6 @@ export const demoClient = {
       throw new Error('Bạn cần đăng nhập bằng tài khoản người báo cáo.')
     }
     const att = await reporterApiAdapter.uploadAttachment(incidentId, file, expectedVersion, session.user.id)
-    try {
-      await mockApi.uploadAttachment(
-        session.user,
-        incidentId,
-        {
-          name: file.filename,
-          size: file.sizeBytes,
-          type: file.mimeType,
-        },
-        expectedVersion
-      )
-    } catch {
-      // Best-effort sync
-    }
     return att
   },
   // N6-W07 / N6-W08: Danh sách sự cố người báo cáo với cursor, bộ lọc, overdue qua Reporter Adapter
