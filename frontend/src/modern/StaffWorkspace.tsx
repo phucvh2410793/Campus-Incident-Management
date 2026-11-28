@@ -25,7 +25,7 @@ import type {
   Status,
 } from '../types/incident.ts'
 import { demoClient } from '../api/demo-client.ts'
-import { staffApiAdapter, type AdapterMode } from '../api/staff-api-adapter.ts'
+import { departmentName, handlerName, realDepartmentId, staffApiAdapter, type AdapterMode } from '../api/staff-api-adapter.ts'
 import { DEPARTMENTS, MOCK_USERS } from '../mocks/mock-users.ts'
 import { mockN7StaffRoleApi } from '../mocks/n7-role-mock-api.ts'
 import { errorText } from '../App.tsx'
@@ -334,7 +334,8 @@ function StaffDetail({
   const [reason, setReason] = useState('')
   const [resolution, setResolution] = useState('')
   const [department, setDepartment] = useState(
-    item.department_id && item.department_id !== 'dept-triage' ? item.department_id : 'dept-csvc'
+    item.department_id && item.department_id !== realDepartmentId('dept-triage')
+      ? item.department_id : staffApiAdapter.getMode() === 'real' ? realDepartmentId('dept-csvc') : 'dept-csvc'
   )
   const [handler, setHandler] = useState('')
   const [priority, setPriority] = useState<'p1' | 'p2' | 'p3'>(item.priority || 'p2')
@@ -399,7 +400,10 @@ function StaffDetail({
   const permissions = detail ? mockN7StaffRoleApi.getPermissionMatrix(detail, user) : null
   const manager = !!permissions && (permissions.isAdmin || permissions.isDepartmentManager)
   const handlers = Object.values(MOCK_USERS).filter(
-    (person) => person.role === 'handler' && person.department_id === department
+    (person) => person.role === 'handler'
+      && (staffApiAdapter.getMode() === 'real'
+        ? person.id === 'user-handler-csvc' && realDepartmentId(person.department_id || '') === department
+        : person.department_id === department)
   )
 
   const run = async (work: () => Promise<unknown>) => {
@@ -603,13 +607,13 @@ function StaffDetail({
                   <strong>
                     {detail.department_name ||
                       (detail.department_id
-                        ? DEPARTMENTS[detail.department_id]?.name
+                        ? departmentName(detail.department_id)
                         : 'Chưa phân công')}
                   </strong>
                 </div>
                 <div>
                   <span>Nhân viên xử lý</span>
-                  <strong>{detail.assigned_handler_name || 'Chưa chỉ định'}</strong>
+                  <strong>{detail.assigned_handler_name || handlerName(detail.assigned_handler_id)}</strong>
                 </div>
                 <div>
                   <span>Định mức SLA</span>
@@ -821,7 +825,7 @@ function StaffDetail({
                         {Object.values(DEPARTMENTS)
                           .filter((value) => value.id !== 'dept-triage')
                           .map((value) => (
-                            <option key={value.id} value={value.id}>
+                            <option key={value.id} value={staffApiAdapter.getMode() === 'real' ? realDepartmentId(value.id) : value.id}>
                               {value.name}
                             </option>
                           ))}

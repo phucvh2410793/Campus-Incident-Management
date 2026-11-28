@@ -40,10 +40,12 @@ export const demoClient = {
   setAdapterMode: (mode: AdapterMode) => staffApiAdapter.setMode(mode),
   checkBackendHealth: () => staffApiAdapter.checkBackendHealth(),
 
-  async login(email: string): Promise<DemoSession> {
-    const result = await mockApi.login({ email })
-    session = { user: result.user, accessToken: result.access_token }
-    staffApiAdapter.setBearerToken(result.access_token)
+  async login(email: string, password: string): Promise<DemoSession> {
+    const result = staffApiAdapter.getMode() === 'real'
+      ? await staffApiAdapter.login(email, password)
+      : await mockApi.login({ email }).then(value => ({ user: value.user, token: value.access_token }))
+    session = { user: result.user, accessToken: result.token }
+    staffApiAdapter.setBearerToken(result.token)
     return session
   },
 

@@ -29,6 +29,26 @@ import { DEPARTMENTS, MOCK_USERS } from '../mocks/mock-users.ts'
 
 export type AdapterMode = 'real' | 'mock'
 
+const demoDepartmentIds: Record<string, string> = {
+  'dept-csvc': '20000000-0000-4000-8000-000000000001',
+  'dept-dien': '20000000-0000-4000-8000-000000000002',
+  'dept-it': '20000000-0000-4000-8000-000000000003',
+  'dept-triage': '20000000-0000-4000-8000-000000000004',
+}
+export const realDepartmentId = (id: string) => demoDepartmentIds[id] || id
+export const departmentName = (id: string | null) => {
+  if (!id) return 'Chưa gán'
+  const alias = Object.keys(demoDepartmentIds).find(key => demoDepartmentIds[key] === id) || id
+  return DEPARTMENTS[alias]?.name || id
+}
+const realHandlerId = (id: string | null) => id === 'user-handler-csvc'
+  ? '10000000-0000-4000-8000-000000000002' : id
+export const handlerName = (id: string | null) => {
+  if (!id) return 'Chưa chỉ định'
+  if (id === '10000000-0000-4000-8000-000000000002') return 'Demo Handler'
+  return Object.values(MOCK_USERS).find(user => user.id === id)?.display_name || `Nhân viên ${id.slice(0, 8)}`
+}
+
 export interface StaffQueueParams {
   department_id?: string
   priority?: Priority
@@ -59,7 +79,7 @@ export interface TransitionInput {
 }
 
 class StaffApiAdapter {
-  private mode: AdapterMode = 'mock'
+  private mode: AdapterMode = 'real'
   private token: string | null = null
   private baseUrl = '/api/v1'
 
@@ -233,7 +253,7 @@ class StaffApiAdapter {
         if (params.status) query.set('status', params.status)
         if (params.category) query.set('category', params.category)
         if (params.priority) query.set('priority', params.priority)
-        if (params.department_id) query.set('department_id', params.department_id)
+        if (params.department_id) query.set('department_id', realDepartmentId(params.department_id))
         if (params.triage_required !== undefined) query.set('triage_required', String(params.triage_required))
         if (params.sla_state === 'overdue') query.set('overdue', 'true')
 
@@ -246,7 +266,7 @@ class StaffApiAdapter {
         const data = await res.json()
         const items: IncidentResponse[] = (data.items || []).map((summary: Record<string, unknown>) => ({
           ...summary,
-          department_name: summary.department_id ? DEPARTMENTS[summary.department_id as string]?.name || summary.department_id : 'Chưa gán',
+          department_name: departmentName(summary.department_id as string | null),
         }))
 
         return {
@@ -258,7 +278,7 @@ class StaffApiAdapter {
           prev_cursor: null,
         }
       } catch (err) {
-        console.warn('Real API getStaffQueue failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 
@@ -293,10 +313,10 @@ class StaffApiAdapter {
         const data = await res.json()
         return {
           ...data,
-          department_name: data.department_id ? DEPARTMENTS[data.department_id]?.name || data.department_id : 'Chưa gán',
+          department_name: departmentName(data.department_id),
         }
       } catch (err) {
-        console.warn('Real API getIncidentDetail failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 
@@ -313,46 +333,22 @@ class StaffApiAdapter {
     actor: UserSummary
   ): Promise<IncidentResponse> {
     if (this.mode === 'real') {
-      // Bước 1: Gán bộ phận qua assign endpoint (bỏ dept-triage)
-      const res = await fetch(`${this.baseUrl}/incidents/${id}/assign`, {
+      const res = await fetch(`${this.baseUrl}/incidents/${id}/triage`, {
         method: 'POST',
         headers: this.authHeaders(),
         body: JSON.stringify({
-          department_id: input.department_id,
-          handler_id: null,
+          department_id: realDepartmentId(input.department_id),
+          priority: input.priority,
+          severity: input.priority === 'p1' ? 'high' : input.priority === 'p2' ? 'medium' : 'low',
           reason: input.reason,
           expected_version: input.expected_version,
         }),
       })
       if (!res.ok) await this.handleFetchError(res)
       const data = await res.json()
-      let updated: IncidentResponse = data.incident || data
-
-      // Bước 2: Nếu có chỉ định priority khác, điều chỉnh priority
-      if (input.priority && input.priority !== updated.priority) {
-        try {
-          const prioRes = await fetch(`${this.baseUrl}/incidents/${id}/priority`, {
-            method: 'POST',
-            headers: this.authHeaders(),
-            body: JSON.stringify({
-              priority: input.priority,
-              reason: input.reason,
-              expected_version: updated.version,
-            }),
-          })
-          if (prioRes.ok) {
-            const prioData = await prioRes.json()
-            updated = prioData.incident || prioData
-          }
-        } catch (prioErr) {
-          console.warn('Real API priority change chained during triage failed:', prioErr)
-        }
-      }
-
+      const updated: IncidentResponse = data.incident || data
       return {
         ...updated,
-        priority: input.priority || updated.priority,
-        triage_required: false,
         department_name: DEPARTMENTS[input.department_id]?.name || input.department_id,
       }
     }
@@ -373,8 +369,8 @@ class StaffApiAdapter {
         method: 'POST',
         headers: this.authHeaders(),
         body: JSON.stringify({
-          department_id: input.department_id,
-          handler_id: input.handler_id || null,
+          department_id: realDepartmentId(input.department_id),
+          handler_id: realHandlerId(input.handler_id || null),
           reason: input.reason,
           expected_version: input.expected_version,
         }),
@@ -584,7 +580,7 @@ class StaffApiAdapter {
           return Array.isArray(data) ? data : data.items || []
         }
       } catch (err) {
-        console.warn('Real API getComments failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 
@@ -606,7 +602,7 @@ class StaffApiAdapter {
           return data.items || []
         }
       } catch (err) {
-        console.warn('Real API getHistory failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 
@@ -628,7 +624,7 @@ class StaffApiAdapter {
           return data.items || []
         }
       } catch (err) {
-        console.warn('Real API getAttachments failed, falling back to mock adapter:', err)
+        throw err
       }
     }
 

@@ -70,6 +70,7 @@ console.log('✓ Mã nguồn StaffQueueTable: Đảm bảo 100% nhãn mức đ�
 // ============================================================================
 console.log('\n--- 2. Kiểm tra Xử lý Lỗi 409 Version Conflict: Cập nhật & Không mất dữ liệu nhập ---')
 
+staffApiAdapter.setMode('mock')
 staffApiAdapter.resetData()
 const incidents = await staffApiAdapter.getAllStaffIncidents(adminUser)
 const targetIncident = incidents.find((i) => i.status === 'in_progress' || i.status === 'assigned')!
