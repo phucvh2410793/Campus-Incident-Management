@@ -106,6 +106,39 @@ export function StaffIncidentDetailModal({
 
   const commentInputId = useId()
 
+  // N7-W09: Lắng nghe phím Escape để đóng Modal thuận tiện bằng bàn phím
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onClose])
+
+  // Điều hướng bằng phím mũi tên giữa các Tab trong Modal
+  const handleDetailTabKeyDown = (e: React.KeyboardEvent, tab: DetailTabKey) => {
+    const availableTabs: DetailTabKey[] =
+      viewMode === 'staff'
+        ? ['info', 'actions', 'timeline', 'files', 'comments', 'permissions']
+        : ['info', 'timeline', 'files', 'comments', 'permissions']
+
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      const idx = availableTabs.indexOf(tab)
+      const nextTab = availableTabs[(idx + 1) % availableTabs.length]
+      setActiveTab(nextTab)
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const idx = availableTabs.indexOf(tab)
+      const prevTab = availableTabs[(idx - 1 + availableTabs.length) % availableTabs.length]
+      setActiveTab(prevTab)
+    }
+  }
+
   // Nạp dữ liệu chi tiết, lịch sử, tệp và trao đổi theo góc nhìn
   useEffect(() => {
     if (!incident) return
@@ -282,10 +315,14 @@ export function StaffIncidentDetailModal({
           </div>
         )}
 
-        {/* Navigation Tabs trong Modal */}
-        <div className="modal-subnav-strip">
+        {/* Navigation Tabs trong Modal (N7-W09: WAI-ARIA Tablist & Arrow Navigation) */}
+        <div className="modal-subnav-strip" role="tablist" aria-label="Các mục thông tin chi tiết sự cố">
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'info'}
+            tabIndex={activeTab === 'info' ? 0 : -1}
+            onKeyDown={(e) => handleDetailTabKeyDown(e, 'info')}
             className={`modal-subnav-btn ${activeTab === 'info' ? 'active' : ''}`}
             onClick={() => setActiveTab('info')}
           >
@@ -294,6 +331,10 @@ export function StaffIncidentDetailModal({
           {viewMode === 'staff' && (
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'actions'}
+              tabIndex={activeTab === 'actions' ? 0 : -1}
+              onKeyDown={(e) => handleDetailTabKeyDown(e, 'actions')}
               className={`modal-subnav-btn ${activeTab === 'actions' ? 'active' : ''}`}
               onClick={() => setActiveTab('actions')}
             >
@@ -302,6 +343,10 @@ export function StaffIncidentDetailModal({
           )}
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'timeline'}
+            tabIndex={activeTab === 'timeline' ? 0 : -1}
+            onKeyDown={(e) => handleDetailTabKeyDown(e, 'timeline')}
             className={`modal-subnav-btn ${activeTab === 'timeline' ? 'active' : ''}`}
             onClick={() => setActiveTab('timeline')}
           >
@@ -309,6 +354,10 @@ export function StaffIncidentDetailModal({
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'files'}
+            tabIndex={activeTab === 'files' ? 0 : -1}
+            onKeyDown={(e) => handleDetailTabKeyDown(e, 'files')}
             className={`modal-subnav-btn ${activeTab === 'files' ? 'active' : ''}`}
             onClick={() => setActiveTab('files')}
           >
@@ -316,6 +365,10 @@ export function StaffIncidentDetailModal({
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'comments'}
+            tabIndex={activeTab === 'comments' ? 0 : -1}
+            onKeyDown={(e) => handleDetailTabKeyDown(e, 'comments')}
             className={`modal-subnav-btn ${activeTab === 'comments' ? 'active' : ''}`}
             onClick={() => setActiveTab('comments')}
           >
@@ -323,6 +376,10 @@ export function StaffIncidentDetailModal({
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'permissions'}
+            tabIndex={activeTab === 'permissions' ? 0 : -1}
+            onKeyDown={(e) => handleDetailTabKeyDown(e, 'permissions')}
             className={`modal-subnav-btn ${activeTab === 'permissions' ? 'active' : ''}`}
             onClick={() => setActiveTab('permissions')}
           >

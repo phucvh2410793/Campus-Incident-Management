@@ -32,9 +32,9 @@ const statusOptions: { value: Status | ''; label: string }[] = [
 
 const priorityOptions: { value: 'p1' | 'p2' | 'p3' | ''; label: string }[] = [
   { value: '', label: 'Tất cả mức ưu tiên' },
-  { value: 'p1', label: 'P1 — Khẩn cấp (SLA 15p)' },
-  { value: 'p2', label: 'P2 — Cao (SLA 2h)' },
-  { value: 'p3', label: 'P3 — Tiêu chuẩn (SLA 8h)' },
+  { value: 'p1', label: 'P1 - Khẩn cấp (SLA tiếp nhận: 15 phút)' },
+  { value: 'p2', label: 'P2 - Cao (SLA tiếp nhận: 2 giờ)' },
+  { value: 'p3', label: 'P3 - Tiêu chuẩn (SLA tiếp nhận: 8 giờ)' },
 ]
 
 const categoryOptions = [

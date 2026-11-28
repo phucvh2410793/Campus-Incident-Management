@@ -3711,6 +3711,191 @@ code, kbd, samp, pre, .font-mono {
   }
 }
 
+/* ==========================================================================
+   TASK N7-W09: RÀ SOÁT BÀN PHÍM, FOCUS, MOBILE RESPONSIVE & LỖI 403/409
+   ========================================================================== */
+
+/* 1. FOCUS VISIBLE RING CHO BÀN PHÍM */
+:focus-visible {
+  outline: 2px solid var(--primary) !important;
+  outline-offset: 2px !important;
+}
+
+.operational-row:focus-visible {
+  outline: 2px solid var(--primary) !important;
+  background-color: #eff6ff !important;
+}
+
+.priority-select-card:focus-visible {
+  outline: 2px solid var(--primary) !important;
+  border-color: var(--primary) !important;
+}
+
+.modal-subnav-btn:focus-visible,
+.workflow-subnav-pill:focus-visible {
+  outline: 2px solid var(--primary) !important;
+  outline-offset: 1px !important;
+}
+
+/* 2. CẢNH BÁO TỪ CHỐI QUYỀN 403 FORBIDDEN (N7-W09) */
+.workflow-forbidden-banner {
+  background-color: #fef2f2 !important;
+  border-left: 4px solid #ef4444 !important;
+  color: #991b1b !important;
+}
+
+.workflow-forbidden-banner strong {
+  color: #b91c1c !important;
+}
+
+.btn-simulate-forbidden {
+  border-color: #ef4444;
+  color: #b91c1c;
+  background-color: #fef2f2;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.btn-simulate-forbidden:hover {
+  background-color: #fee2e2;
+  border-color: #dc2626;
+  color: #991b1b;
+}
+
+/* 3. RESPONSIVE QUEUE: BẢNG LAPTOP vs CARD VIEW DI ĐỘNG */
+.operational-mobile-cards {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .operational-table-desktop {
+    display: none !important;
+  }
+
+  .operational-mobile-cards {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 0;
+  }
+
+  .operational-mobile-card {
+    background-color: var(--surface-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow-xs);
+  }
+
+  .operational-mobile-card:hover,
+  .operational-mobile-card:focus-visible {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary);
+    background-color: #f8fafc;
+  }
+
+  .mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .mobile-card-id-block {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mobile-incident-id {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.875rem;
+  }
+
+  .mobile-card-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mobile-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.35;
+    margin: 0;
+  }
+
+  .mobile-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .mobile-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border-light);
+    padding-top: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .mobile-card-status-sla {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .mobile-card-btn {
+    min-height: 44px; /* Chuẩn tiếp cận màn hình cảm ứng di động (Touch Target) */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    font-weight: 600;
+  }
+
+  /* Điều chỉnh kích thước modal trên màn hình di động */
+  .modal-container-w4,
+  .modal-container {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    max-height: 94vh !important;
+    margin: 10px auto;
+  }
+
+  .modal-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 10px;
+  }
+
+  .modal-subnav-strip {
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .modal-subnav-btn {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+}
+
 
 
 
