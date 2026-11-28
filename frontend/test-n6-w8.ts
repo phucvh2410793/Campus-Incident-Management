@@ -50,6 +50,7 @@ console.log(`✓ Đăng nhập xác thực tài khoản "${reporter.display_name
 console.log('\n--- 3. Kiểm thử Luồng Reporter Cốt Lõi: Tạo -> Upload -> Lấy DS -> Chi tiết -> Bổ sung ---')
 
 reporterApiAdapter.reset()
+demoClient.setAdapterMode('mock')
 await demoClient.login(reporter.email)
 
 // 3.1 Tạo sự cố kèm Idempotency-Key

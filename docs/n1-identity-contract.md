@@ -92,3 +92,50 @@ W7 dùng `IncidentPolicy` thống nhất tại các điểm đã có API:
 Test W7 gọi API thật trên PostgreSQL với reporter, handler, manager và administrator ở hai bộ phận. Ngoài phạm vi xem trả 404; đã được xem nhưng thiếu quyền thao tác trả 403. Sau khi chuyển bộ phận/handler, quyền cũ mất và quyền mới có hiệu lực; nội dung comment internal không lộ cho owner chỉ có quyền xem. Sau khi gộp N2 W6–W7 và N4 W7, chạy lại các test upload/list/download, supplement/history, transition, audit và cập nhật đồng thời trên PostgreSQL.
 
 Chạy lại ma trận quyền W7 trên các endpoint N2 và N4 sau khi các PR liên quan được gộp.
+
+## Ma trận kiểm thử âm tính & Seed dữ liệu lớn W8
+
+W8 hoàn thiện việc rà soát ma trận quyền và kiểm thử âm tính trên tập dữ liệu seed lớn:
+- **Seed lớn đa vai trò (`app/auth/seed_large.py`):** Tạo 8 phòng ban thực tế, hơn 35 tài khoản trải rộng 4 vai trò, kèm các phiên làm việc (active, expired, revoked, locked).
+- **Test ma trận âm tính (`tests/test_n1_w8_negative_auth_matrix.py`):**
+  - `401 Unauthorized`: Kiểm tra token thiếu, sai scheme, token giả mạo, session hết hạn, session bị thu hồi qua logout hoặc khóa tài khoản.
+  - `404 Not Found`: Áp dụng kỹ thuật che giấu tài nguyên (masking) khi truy cập chéo giữa các reporter, chéo phòng ban giữa các handler/manager, hoặc handler chưa được giao sự cố.
+  - `403 Forbidden`: Chặn các hành vi trong phạm vi xem nhưng vượt thẩm quyền (reporter tự đóng, handler đóng sự cố, reporter đăng comment nội bộ, tài khoản thường gọi admin API).
+  - `429 Too Many Requests`: Rate limiter chống brute-force đăng nhập theo IP/email.
+
+## Chuẩn hóa OpenAPI & Tương thích Frontend W9
+
+W9 cố định hợp đồng giao tiếp giữa backend và frontend:
+- **Error Envelope & Schema (`app/auth/schemas.py`):** Chuẩn hóa cấu trúc gói lỗi `ErrorEnvelope` và `ErrorResponse`, mã hóa các mã lỗi định danh (`invalid_credentials`, `unauthenticated`, `forbidden`, `not_found`, `rate_limited`).
+- **OpenAPI 3.1.0 (`docs/openapi.json`):** Xuất toàn bộ 37 endpoint hệ thống với đầy đủ security scheme `BearerAuth`, request payload và response models.
+- **Tích hợp API thật vào Frontend (`frontend/src/api/demo-client.ts`):** Chuyển đổi luồng login/logout và lấy thông tin người dùng sang API backend thực tế, hỗ trợ offline fallback mượt mà cho kịch bản demo trình diễn.
+- **Kiểm thử hợp đồng frontend (`frontend/test-n1-w9-auth.ts`):** 16 bài kiểm thử TypeScript tự động đảm bảo frontend gọi đúng API backend và xử lý chính xác các mã lỗi 401/429.
+
+## Kiểm toán bảo mật W10
+
+W10 thực hiện rà soát và thắt chặt toàn diện an ninh hệ thống:
+- **Bảo mật cơ sở dữ liệu:** Không lưu mật khẩu hoặc session token dạng plaintext (100% mật khẩu dùng bcrypt, session token dùng hàm băm an toàn SHA-256 `token_hash`).
+- **Lọc dữ liệu nhạy cảm (`app/core/logging_security.py`):** Tự động che giấu Bearer token, password, credential trong log headers và request payloads.
+- **Quét mã nguồn tự động:** Bộ test `test_n1_w10_security_audit.py` quét toàn bộ codebase đảm bảo không hardcode credentials, private keys hoặc API secrets trong Git.
+
+## Runbook vận hành & Khôi phục thảm họa W11
+
+W11 đóng gói tài liệu vận hành và công cụ sao lưu/khôi phục PostgreSQL:
+- **Tài liệu hướng dẫn:** [docs/runbooks/identity-and-database.md](runbooks/identity-and-database.md) hướng dẫn dựng database sạch, chạy migration, seed tài khoản và quy trình khôi phục.
+- **Công cụ tự động hóa:**
+  - `backend/scripts/backup_db.py`: Sao lưu database với `pg_dump` nén gzip.
+  - `backend/scripts/restore_db.py`: Khôi phục database sạch từ file backup với `psql`.
+  - `backend/scripts/verify_restore.py`: Xác thực tính toàn vẹn dữ liệu và kiểm tra đăng nhập tự động cho cả 4 vai trò.
+- **Kiểm thử tự động (`tests/test_n1_w11_backup_restore.py`):** Kiểm thử E2E toàn bộ chu trình backup -> drop/restore -> verify auth trên database trắng.
+
+## Regression & Đóng băng mã nguồn W12
+
+W12 hoàn tất các điều kiện nghiệm thu cuối cùng trước mốc 04/01/2027:
+- **Bộ kiểm thử hồi quy tổng thể (`tests/test_n1_w12_regression.py`):**
+  - **T07:** Cách ly dữ liệu giữa các reporter (bảo vệ bằng 404, không rò rỉ ID, comment hoặc bằng chứng).
+  - **T08:** Cách ly phạm vi quản lý giữa các phòng ban (handler/manager không thể thao tác chéo phòng ban; administrator quản trị tập trung toàn trường có audit log).
+  - **T09:** Thẩm quyền chuyển trạng thái vòng đời sự cố (nghiêm cấm reporter chuyển trạng thái, handler không được đóng/mở lại sự cố).
+  - **Vòng đời Session:** Kiểm chứng thông suốt chu trình Đăng nhập -> Xác thực -> Thu hồi qua Logout -> Thu hồi tức thời khi Admin khóa tài khoản.
+  - **Audit Trail:** Mọi thao tác quản trị tài khoản và phân quyền ghi vết không thể sửa xóa trong `admin_audit_logs`.
+- **Đóng băng hợp đồng N1:** Toàn bộ model, migration, router auth/admin, runbook và test suite được đóng băng, test xanh 100%, sẵn sàng bàn giao cho các mảng N2–N7 và hội đồng bảo vệ.
+

@@ -138,3 +138,38 @@ class IncidentSummary(BaseModel):
 class IncidentPage(BaseModel):
     items: list[IncidentSummary]
     next_cursor: str | None
+
+
+class ManualTriageRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    expected_version: int = Field(ge=1)
+    department_id: UUID
+    severity: Literal["low", "medium", "high", "critical"]
+    priority: Literal["p1", "p2", "p3"]
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class RuleEvaluationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    incident_id: UUID
+    rule_version_id: UUID
+    rule_id: str | None
+    severity: str | None
+    priority: str | None
+    department: str
+    reason: str
+    triage_required: bool
+    safety_flags: list[str]
+    evaluated_at: datetime
+
+
+class ReevaluateIncidentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)

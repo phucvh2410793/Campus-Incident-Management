@@ -1,10 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
@@ -17,6 +15,12 @@ from app.auth.dependencies import (
 from app.auth.errors import auth_request_id
 from app.auth.models import Session as UserSession
 from app.auth.rate_limit import login_limiter
+from app.auth.schemas import (
+    ErrorResponse,
+    LoginRequest,
+    LoginResponse,
+    UserResponse,
+)
 from app.auth.security import (
     create_session_token,
     hash_session_token,
@@ -30,42 +34,6 @@ router = APIRouter(
 )
 
 SESSION_DURATION_HOURS = 8
-
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str = Field(min_length=1, max_length=128)
-
-    @field_validator("email")
-    @classmethod
-    def validate_login_email(cls, value: str) -> str:
-        local, separator, domain = value.rpartition("@")
-        is_demo_address = bool(separator) and domain.lower() == "demo.invalid"
-        # The demo seed uses .invalid, which the email validator normally rejects.
-        candidate = f"{local}@demo.example.com" if is_demo_address else value
-        try:
-            normalized = validate_email(candidate, check_deliverability=False).normalized
-        except EmailNotValidError as exc:
-            raise ValueError("Invalid email address") from exc
-        if is_demo_address:
-            return f"{normalized.rpartition('@')[0]}@demo.invalid"
-        return normalized
-
-
-class UserResponse(BaseModel):
-    id: str
-    email: str
-    display_name: str
-    role: str
-    department_id: str | None
-    is_active: bool
-
-
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_at: datetime
-    user: UserResponse
 
 
 def user_response(user: User) -> UserResponse:
@@ -100,7 +68,15 @@ def login_error(
     )
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    responses={
+        200: {"model": LoginResponse, "description": "Đăng nhập thành công, trả về Bearer Token"},
+        401: {"model": ErrorResponse, "description": "Email hoặc mật khẩu không chính xác"},
+        429: {"model": ErrorResponse, "description": "Quá nhiều lần thử sai, bị giới hạn tần suất"},
+    },
+)
 def login(
     payload: LoginRequest,
     db: Annotated[DBSession, Depends(get_db)],
@@ -161,7 +137,17 @@ def login(
     )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    responses={
+        200: {"model": UserResponse, "description": "Thông tin phiên người dùng hiện tại"},
+        401: {
+            "model": ErrorResponse,
+            "description": "Token không hợp lệ, hết hạn hoặc đã bị thu hồi",
+        },
+    },
+)
 def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
     request: Request,
@@ -174,6 +160,13 @@ def get_me(
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        204: {"description": "Đăng xuất thành công, session token bị thu hồi"},
+        401: {
+            "model": ErrorResponse,
+            "description": "Token không hợp lệ, hết hạn hoặc đã bị thu hồi",
+        },
+    },
 )
 def logout(
     auth: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],

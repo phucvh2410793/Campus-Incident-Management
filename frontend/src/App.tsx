@@ -24,8 +24,8 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => { const pop = () => setPage(pageFromPath()); addEventListener('popstate', pop); return () => removeEventListener('popstate', pop) }, [])
   const go = (next: Page) => { history.pushState({}, '', paths[next]); setPage(next); setMenuOpen(false); scrollTo(0, 0) }
-  const login = async (event: FormEvent) => { event.preventDefault(); setLoggingIn(true); setLoginError(''); try { demoClient.setReporterAdapterMode('real'); const result = await demoClient.login(email, password); setSession(result); go(result.user.role === 'reporter' ? 'reports' : 'overview') } catch (error) { setLoginError(errorText(error)) } finally { setLoggingIn(false) } }
-  const logout = () => { demoClient.logout(); setSession(null); go('login') }
+  const login = async (event: FormEvent) => { event.preventDefault(); setLoggingIn(true); setLoginError(''); try { demoClient.setAdapterMode('real'); demoClient.setReporterAdapterMode('real'); const result = await demoClient.login(email, password); setSession(result); go(result.user.role === 'reporter' ? 'reports' : 'overview') } catch (error) { setLoginError(errorText(error)) } finally { setLoggingIn(false) } }
+  const logout = async () => { await demoClient.logout(); setSession(null); go('login') }
   const isReporter = session?.user.role === 'reporter'
   const allowed = page === 'health' || (isReporter ? page === 'reports' || page === 'create' : !!session && (page === 'overview' || page === 'queue'))
   const nav = isReporter ? [{ page: 'reports' as Page, label: 'Báo cáo của tôi', icon: ClipboardList }, { page: 'create' as Page, label: 'Tạo báo cáo', icon: Plus }] : [{ page: 'overview' as Page, label: 'Tổng quan', icon: LayoutDashboard }, { page: 'queue' as Page, label: 'Hàng đợi sự cố', icon: Inbox }]

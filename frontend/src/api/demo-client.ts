@@ -42,20 +42,71 @@ export const demoClient = {
   setReporterAdapterMode: (mode: ReporterAdapterMode) => reporterApiAdapter.setMode(mode),
   checkBackendHealth: () => staffApiAdapter.checkBackendHealth(),
 
-  async login(email: string, password: string): Promise<DemoSession> {
-    const result = reporterApiAdapter.getMode() === 'real'
-      ? await reporterApiAdapter.login(email, password)
-      : await mockApi.login({ email }).then(value => ({ user: value.user, token: value.access_token }))
-    session = { user: result.user, accessToken: result.token }
-    staffApiAdapter.setBearerToken(result.token)
-    reporterApiAdapter.setBearerToken(result.token)
+  async login(email: string, password?: string): Promise<DemoSession> {
+    if (staffApiAdapter.getMode() === 'real' || (reporterApiAdapter.getMode() === 'real' && password)) {
+      if (!password) throw new Error('Vui lòng nhập mật khẩu.')
+      const resp = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}))
+        throw new Error(body?.error?.message || (resp.status === 429
+          ? 'Quá nhiều lần đăng nhập sai. Hãy thử lại sau.'
+          : 'Email hoặc mật khẩu không đúng.'))
+      }
+      const data = await resp.json()
+      session = { user: data.user, accessToken: data.access_token }
+      staffApiAdapter.setBearerToken(data.access_token)
+      reporterApiAdapter.setBearerToken(data.access_token)
+      return session
+    }
+
+    const result = await mockApi.login({ email })
+    session = { user: result.user, accessToken: result.access_token }
+    staffApiAdapter.setBearerToken(result.access_token)
+    reporterApiAdapter.setBearerToken(result.access_token)
     return session
   },
 
-  logout(): void {
+  async getMe(): Promise<UserSummary | null> {
+    if (!session?.accessToken) return null
+    try {
+      const resp = await fetch('/api/v1/auth/me', {
+        headers: { 'Authorization': `Bearer ${session.accessToken}` },
+      })
+      if (resp.ok) {
+        const user = await resp.json()
+        session.user = user
+        return user
+      }
+      if (resp.status === 401) {
+        this.logout()
+        return null
+      }
+    } catch {
+      // Offline fallback
+    }
+    return session.user
+  },
+
+  async logout(): Promise<void> {
+    const token = session?.accessToken
     session = null
     staffApiAdapter.setBearerToken(null)
     reporterApiAdapter.setBearerToken(null)
+
+    if (token && typeof fetch !== 'undefined') {
+      try {
+        await fetch('/api/v1/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        })
+      } catch {
+        // Best effort
+      }
+    }
   },
 
   async reporterIncidents(): Promise<IncidentSummary[]> {
