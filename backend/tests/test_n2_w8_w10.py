@@ -19,12 +19,23 @@ from app.evidence.models import IncidentAttachment
 from app.incidents.models import Incident
 from app.incidents.supplements import IncidentSupplement
 from app.incidents.updates import SupplementRequest, add_supplement
-from app.models import User
+from app.models import Department, User
 from app.workflow.contracts import WorkflowViolation
 from app.workflow.models import AuditLog
 
 
-def test_create_survives_offline_automation_and_keeps_event(client, auth_headers, db_session):
+@pytest.fixture
+def seeded_rule_departments(db_session):
+    """Supply departments required by the integrated N3 create rule."""
+    for name in ("Cơ sở vật chất", "Điện và an toàn", "IT/Security"):
+        if db_session.scalar(sa.select(Department).where(Department.name == name)) is None:
+            db_session.add(Department(name=name))
+    db_session.flush()
+
+
+def test_create_survives_offline_automation_and_keeps_event(
+    client, auth_headers, db_session, seeded_rule_departments
+):
     """Creating a report must not depend on a live n8n webhook or worker."""
     key = str(uuid4())
     headers = {**auth_headers, "Idempotency-Key": key}
@@ -41,7 +52,9 @@ def test_create_survives_offline_automation_and_keeps_event(client, auth_headers
     assert db_session.scalar(sa.select(sa.func.count()).select_from(OutboxEvent)) == 1
 
 
-def test_reporter_scope_and_script_text_stay_json(client, db_session, auth_headers):
+def test_reporter_scope_and_script_text_stay_json(
+    client, db_session, auth_headers, seeded_rule_departments
+):
     _, other_headers = make_user(client, db_session, "reporter")
     _, admin_headers = make_user(client, db_session, "administrator")
     script = '<script>alert("x")</script>'
@@ -66,7 +79,7 @@ def test_reporter_scope_and_script_text_stay_json(client, db_session, auth_heade
 
 
 def test_evidence_inventory_catches_missing_or_changed_files(
-    client, db_session, auth_headers, tmp_path, monkeypatch
+    client, db_session, auth_headers, seeded_rule_departments, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(get_settings(), "evidence_dir", tmp_path)
     created = client.post(
