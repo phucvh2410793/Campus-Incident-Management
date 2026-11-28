@@ -12,6 +12,7 @@ from app.automation.notifications import (
     DemoEmailSender,
     build_assigned_notification,
     build_p1_alert_notification,
+    build_public_state_notification,
     build_reported_notification,
     dispatch_notification_task,
 )
@@ -136,7 +137,7 @@ class DispatchNotificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: uuid.UUID
-    scenario: Literal["reported", "assigned", "p1"]
+    scenario: Literal["reported", "assigned", "p1", "public_state_updated"]
     recipient_user_id: uuid.UUID
     recipient_email: str = Field(min_length=3, max_length=255)
     incident_id: uuid.UUID
@@ -144,6 +145,8 @@ class DispatchNotificationRequest(BaseModel):
     department_name: str | None = None
     priority: str | None = None
     reason: str | None = None
+    new_state: str | None = None
+    resolution_summary: str | None = None
     frontend_base_url: str = "http://localhost:5173"
     simulate_outcome: Literal["sent", "failed", "uncertain"] | None = None
 
@@ -412,11 +415,13 @@ def evaluate_internal_event(
     """
     # 1. Verify event exists
     incident_id: uuid.UUID | None = None
+    database_event = False
     if db is not None:
         repo = OutboxRepository(db)
         record = repo.get_event(event_id)
         if record:
             incident_id = record.incident_id
+            database_event = True
 
     if incident_id is None:
         publisher = get_event_publisher()
@@ -432,11 +437,92 @@ def evaluate_internal_event(
         )
 
     # 2. Check cached evaluation for idempotency
-    if event_id in _IN_MEMORY_EVALUATIONS:
+    if not database_event and event_id in _IN_MEMORY_EVALUATIONS:
         cached = _IN_MEMORY_EVALUATIONS[event_id]
         return EvaluateResponse(**cached)
 
-    # 3. Default demo evaluation result (W3 milestone contract baseline)
+    # 3. Evaluate real incident if present in DB (W8 milestone integration)
+    if database_event:
+        try:
+            import sqlalchemy as sa
+
+            from app.auth.seed_demo import DEMO_DEPARTMENTS
+            from app.incidents.models import Incident
+            from app.models import Department
+            from app.rules.engine import evaluate_incident
+
+            if not sa.inspect(db.bind).has_table("incidents"):
+                # Contract-only tests deliberately create just the outbox schema.
+                database_event = False
+                incident = None
+            else:
+                incident = db.get(Incident, incident_id)
+            if incident is None and database_event:
+                raise HTTPException(
+                    status_code=404, detail="Incident for outbox event not found"
+                )
+            if incident is not None:
+                rule_res = evaluate_incident(incident.category, incident.answers or {})
+
+                dept = None
+                if rule_res.department:
+                    dept = db.scalar(
+                        sa.select(Department).where(Department.name == rule_res.department)
+                    )
+
+                dept_map = {name: did for did, name in DEMO_DEPARTMENTS}
+                department_id = (
+                    dept.id
+                    if dept
+                    else dept_map.get(
+                        rule_res.department,
+                        uuid.UUID("20000000-0000-4000-8000-000000000001"),
+                    )
+                )
+
+                severity = rule_res.severity or "medium"
+                priority = (rule_res.priority or "p2").upper()
+                rule_id = rule_res.rule_id or "demo-v1"
+                reason = rule_res.reason
+
+                incident.severity = rule_res.severity or incident.severity
+                incident.priority = (rule_res.priority or incident.priority or "p2").lower()
+                incident.department_id = department_id
+                incident.triage_required = rule_res.triage_required
+                incident.rule_evaluation = {
+                    "rule_id": rule_res.rule_id,
+                    "severity": rule_res.severity,
+                    "priority": rule_res.priority,
+                    "department": rule_res.department,
+                    "reason": rule_res.reason,
+                    "triage_required": rule_res.triage_required,
+                    "safety_flags": list(rule_res.safety_flags) if rule_res.safety_flags else [],
+                    "run_id": payload.run_id,
+                }
+                db.commit()
+
+                eval_result = {
+                    "incident_id": incident_id,
+                    "status": incident.status,
+                    "severity": severity,
+                    "priority": priority,
+                    "department_id": department_id,
+                    "rule_id": rule_id,
+                    "rule_version": 1,
+                    "reason": reason,
+                    "triage_required": rule_res.triage_required,
+                    "incident_version": incident.version,
+                }
+                return EvaluateResponse(**eval_result)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=503, detail="Incident evaluation could not be persisted"
+            ) from exc
+
+    # 4. Default demo evaluation result (W3 milestone contract baseline)
     eval_result = {
         "incident_id": incident_id,
         "status": "assigned",
@@ -663,6 +749,47 @@ def dispatch_test_notification_endpoint(
             reason=payload.reason,
             frontend_base_url=payload.frontend_base_url,
         )
+    elif payload.scenario == "public_state_updated":
+        if not payload.new_state:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Field 'new_state' is required for 'public_state_updated' scenario",
+            )
+        try:
+            email_obj = build_public_state_notification(
+                incident_id=payload.incident_id,
+                reporter_user_id=payload.recipient_user_id,
+                reporter_email=payload.recipient_email,
+                new_state=payload.new_state,
+                resolution_summary=payload.resolution_summary,
+                frontend_base_url=payload.frontend_base_url,
+            )
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
+            ) from err
+        if db is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Incident database is required for public state notifications",
+            )
+        from app.incidents.models import Incident
+        from app.models import User
+
+        incident = db.get(Incident, payload.incident_id)
+        if incident is None:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        reporter = db.get(User, incident.reporter_id)
+        if (
+            reporter is None
+            or reporter.id != payload.recipient_user_id
+            or reporter.email.casefold() != payload.recipient_email.casefold()
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Public state notification recipient must be the incident reporter",
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

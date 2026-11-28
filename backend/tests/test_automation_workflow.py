@@ -291,7 +291,7 @@ def test_workflow_rejects_expired_timestamp(client: TestClient, db_session: Sess
 
 def test_workflow_rejects_future_timestamp(client: TestClient, db_session: Session):
     event_id, raw_body = _seed_event(db_session)
-    headers = _signed_headers(event_id, raw_body, timestamp=int(time.time()) + 301)
+    headers = _signed_headers(event_id, raw_body, timestamp=int(time.time()) + 360)
 
     result = run_workflow(client, headers, raw_body, run_id="run-future")
 

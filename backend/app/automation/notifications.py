@@ -29,6 +29,7 @@ class NotificationKind(StrEnum):
     INCIDENT_REPORTED = "incident_reported"
     INCIDENT_ASSIGNED = "incident_assigned"
     P1_ALERT = "p1_alert"
+    PUBLIC_STATE_UPDATED = "public_state_updated"
 
 
 class NotificationDeliveryStatus(StrEnum):
@@ -64,9 +65,14 @@ PROHIBITED_INTERNAL_PATTERNS = [
     re.compile(r"\[internal\]", re.IGNORECASE),
     re.compile(r"ghi\s+chú\s+nội\s+bộ", re.IGNORECASE),
     re.compile(r"internal_note", re.IGNORECASE),
+    re.compile(r"internal_comment", re.IGNORECASE),
     re.compile(r"visibility:\s*internal", re.IGNORECASE),
     re.compile(r"is_internal\s*[:=]\s*true", re.IGNORECASE),
+    re.compile(r"handler_notes?", re.IGNORECASE),
+    re.compile(r"triage_reason", re.IGNORECASE),
 ]
+
+PROHIBITED_STAFF_LINK_FOR_REPORTER = re.compile(r"/staff/incidents/", re.IGNORECASE)
 
 
 class NotificationSecurityError(ValueError):
@@ -123,6 +129,14 @@ def validate_notification_safety(email: NotificationEmail) -> None:
         if match:
             raise NotificationSecurityError(
                 f"Prohibited internal note detected in notification email: '{match.group(0)}'"
+            )
+
+    # 4. Check that reporter never receives staff portal links
+    if email.kind in (NotificationKind.INCIDENT_REPORTED, NotificationKind.PUBLIC_STATE_UPDATED):
+        match = PROHIBITED_STAFF_LINK_FOR_REPORTER.search(combined_text)
+        if match:
+            raise NotificationSecurityError(
+                f"Prohibited staff portal link detected in reporter email: '{match.group(0)}'"
             )
 
 
@@ -267,6 +281,87 @@ def build_p1_alert_notification(
         body_text=body_text,
         link=link,
         kind=NotificationKind.P1_ALERT,
+        incident_id=incident_id,
+    )
+    validate_notification_safety(email)
+    return email
+
+
+# ---------------------------------------------------------------------------
+# Email Builders for Public State Updates (W9)
+# ---------------------------------------------------------------------------
+
+VALID_PUBLIC_STATES = {
+    "reported": "Đã tiếp nhận báo cáo",
+    "assigned": "Đã phân công nhân viên phụ trách",
+    "in_progress": "Đang trong quá trình xử lý",
+    "resolved": "Đã được xử lý / khắc phục",
+    "closed": "Đã đóng sự cố",
+    "reopened": "Đã được mở lại để kiểm tra tiếp",
+}
+
+
+def build_public_state_notification(
+    incident_id: uuid.UUID,
+    reporter_user_id: uuid.UUID,
+    reporter_email: str,
+    new_state: str,
+    *,
+    resolution_summary: str | None = None,
+    updated_at: datetime | None = None,
+    frontend_base_url: str = "http://localhost:5173",
+) -> NotificationEmail:
+    """Build public state update notification exclusively for the incident reporter (W9).
+
+    Guarantees:
+    - Reporter only receives updates for valid public states:
+      assigned, in_progress, resolved, closed, reopened.
+    - Contains ONLY public information: public status, resolution summary, public link.
+    - Strictly forbids internal staff notes, technician secrets, or /staff/* portal links.
+    - Protected by idempotency key (event_id, 'public_state_updated', reporter_user_id).
+    """
+    clean_state = new_state.lower().strip()
+    if clean_state not in VALID_PUBLIC_STATES:
+        allowed = list(VALID_PUBLIC_STATES.keys())
+        raise ValueError(
+            f"Invalid public state: '{new_state}'. Allowed public states: {allowed}"
+        )
+
+    short_id = str(incident_id)[:8]
+    state_display = VALID_PUBLIC_STATES[clean_state]
+    timestamp_str = (
+        updated_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+        if updated_at
+        else datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    )
+    link = f"{frontend_base_url.rstrip('/')}/incidents/{incident_id}"
+
+    subject = f"[CIM] Cập nhật tiến độ sự cố #{short_id}: {state_display}"
+
+    resolution_section = ""
+    if resolution_summary:
+        sanitized_summary = resolution_summary.strip()[:500]
+        resolution_section = f"\n- Kết quả xử lý công khai: {sanitized_summary}\n"
+
+    body_text = (
+        f"Xin chào,\n\n"
+        f"Sự cố của bạn (Mã: {incident_id}) vừa có cập nhật trạng thái mới:\n"
+        f"- Trạng thái mới: {state_display}\n"
+        f"- Thời gian cập nhật: {timestamp_str}\n"
+        f"{resolution_section}\n"
+        f"Bạn có thể theo dõi tiến độ chi tiết hoặc bổ sung ý kiến tại liên kết công khai:\n"
+        f"{link}\n\n"
+        f"Trân trọng,\n"
+        f"Đội ngũ hỗ trợ khuôn viên CIM"
+    )
+
+    email = NotificationEmail(
+        recipient_user_id=reporter_user_id,
+        recipient_email=reporter_email,
+        subject=subject,
+        body_text=body_text,
+        link=link,
+        kind=NotificationKind.PUBLIC_STATE_UPDATED,
         incident_id=incident_id,
     )
     validate_notification_safety(email)

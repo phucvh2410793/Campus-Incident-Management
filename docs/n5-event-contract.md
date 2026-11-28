@@ -307,3 +307,146 @@ backend\.venv\Scripts\python.exe -m app.automation.run_worker --retry-notificati
 ### Kiểm thử W6 & W7
 Bộ kiểm thử chấp nhận toàn diện cho W6 và W7 được triển khai tại:
 `backend/tests/test_automation_notifications.py` (34 test cases bao phủ kịch bản gửi đúng người/link, chặn file/secret/ghi chú nội bộ, dead-letter, lý do admin retry, và bất biến uncertain).
+
+## 13. Ghép Event Thật Từ N2/N3/N4, Workflow Evaluate và Schedule SLA Check (W8)
+
+Nhằm hoàn thiện luồng tích hợp tự động hóa cho mốc W8:
+
+### 1. Ghép Event Thật từ N2/N3/N4
+Các sự kiện nghiệp vụ thực tế được liên kết đồng bộ qua bảng transactional outbox:
+- **N2 (`incident.reported`)**: Khi người báo gửi sự cố mới qua API `/api/v1/incidents`, bản ghi sự cố và event `incident.reported` được commit atomic trong cùng transaction.
+- **N4 (`incident.assigned` & `incident.priority_changed`)**: Khi cán bộ phân công kỹ thuật viên hoặc điều chỉnh priority, sự kiện được ghi nhận vào outbox để kích hoạt thông báo n8n.
+- **N3 (`sla.escalated`)**: Khi tác vụ rà soát SLA phát hiện sự cố quá hạn chưa được tiếp nhận, bản ghi leo thang (escalation) và event `sla.escalated` được lưu atomic vào outbox.
+
+### 2. Ba ca MVP Đi Xuyên Backend → n8n → Backend
+Luồng khép kín hoàn chỉnh giữa backend và n8n:
+1. **Rò nước (`water_leak`)**: Dữ liệu khảo sát (ví dụ: nước gần điện `near_electricity="yes"`) đi qua n8n -> gọi `/internal/events/{id}/evaluate` -> bộ quy tắc Rule Engine N3 khớp quy tắc **R03**, gán priority **P1**, bộ phận **Cơ sở vật chất**, cập nhật incident trong DB -> n8n gọi `/internal/events/{id}/complete` chuyển event thành `done`.
+2. **Nguy hiểm điện (`electrical_hazard`)**: Dấu hiệu khói/tia lửa (`smoke_or_sparks="yes"`) -> khớp quy tắc **R01**, priority **P1**, bộ phận **Điện và an toàn**, severity **critical**.
+3. **Lừa đảo (`phishing`)**: Đã nhập thông tin (`interaction="entered_information"`) -> khớp quy tắc **R02**, priority **P1**, bộ phận **IT/Security**, severity **high**.
+
+Tất cả các lệnh gọi `/evaluate` có tính idempotent cao: nếu gọi lại cùng một event, hệ thống trả về kết quả nhất quán mà không tính toán lại hay ghi đè sai lệch dữ liệu.
+
+### 3. Workflow Schedule SLA Check và Bất Biến "Báo Một Lần/Mức"
+- **Workflow n8n (`workflows/sla-check.json`)**:
+  - `Schedule Trigger`: Định kỳ 1 phút (hoặc theo cấu hình cron) tự động kích hoạt.
+  - Gọi `POST /internal/sla/check` với service bearer token để quét toàn bộ sự cố đang ở trạng thái `reported` hoặc `assigned` đã quá deadline tiếp nhận (`acknowledgment_deadline_at`).
+- **Quy tắc bất biến: SLA báo một lần/mức**:
+  - Mỗi sự cố chỉ được phép tạo đúng 1 bản ghi `escalations` cho mỗi cấp độ (`level=1`).
+  - Lệnh gọi định kỳ lặp lại sẽ bỏ qua các sự cố đã được leo thang ở mức này (`escalations_created=0`), đảm bảo không spam cảnh báo hay lặp event vô hạn.
+  - Bản ghi leo thang mới sẽ phát sinh event `sla.escalated` vào outbox để dispatcher chuyển tiếp sang n8n gửi email khẩn cấp cho Quản lý trực ban.
+- **CLI hỗ trợ**:
+  ```powershell
+  # Chạy kiểm tra SLA ngay lập tức từ dòng lệnh
+  backend\.venv\Scripts\python.exe -m app.automation.run_worker --check-sla
+  ```
+
+### 4. Kiểm Thử Chấp Nhận W8
+Bộ kiểm thử chấp nhận tích hợp W8 tại `backend/tests/test_automation_w8_integration.py` bao phủ:
+- Luồng 3 ca MVP đi xuyên backend -> n8n -> backend.
+- Đầy đủ các domain event thực tế từ N3 và N4.
+- Bất biến kiểm tra SLA báo một lần/mức và dispatch event `sla.escalated`.
+- Kiểm thử workflow file JSON và cờ CLI `--check-sla`.
+
+## 14. Email Cập Nhật Public State, Khóa Chống Trùng và Giới Hạn Nội Dung (W9)
+
+Nhằm bảo đảm người báo sự cố luôn được thông báo minh bạch về tiến độ công khai mà không làm lộ dữ liệu nội bộ:
+
+### 1. Kịch bản Thông báo Public State (`public_state_updated`)
+- **Đối tượng nhận**: Người báo sự cố (`reporter_user_id`, email: `reporter@demo.invalid`).
+- **Trạng thái công khai hợp lệ**: `assigned` (Đã phân công), `in_progress` (Đang xử lý), `resolved` (Đã khắc phục), `closed` (Đã đóng), `reopened` (Mở lại).
+- **Tiêu đề**: `[CIM] Cập nhật tiến độ sự cố #{short_id}: {state_display}`.
+- **Nội dung công khai**:
+  - Mã sự cố, tên trạng thái công khai mới, thời gian cập nhật (UTC).
+  - Kết quả xử lý công khai (`resolution_summary`) khi sự cố được giải quyết (`resolved`).
+  - Đường dẫn theo dõi công khai: `http://localhost:5173/incidents/{incident_id}`.
+
+### 2. Chính Sách Giới Hạn Nội Dung Nghiêm Ngặt (Content Safety Guards)
+Hàm `validate_notification_safety()` và `build_public_state_notification()` chặn ngay lập tức nếu phát hiện:
+- **Ghi chú nội bộ**: Tuyệt đối không cho phép `[internal]`, `internal_note`, `internal_comment`, `visibility: internal`, `handler_note`, `triage_reason`.
+- **Đường dẫn quản trị staff**: Người báo tuyệt đối không nhận link portal nội bộ (`/staff/incidents/*`).
+- **Mật khẩu & Bí mật**: Tuyệt đối cấm xuất hiện `password`, `Bearer token`, `access_token`, secret.
+- **Tệp đính kèm & Binary**: Không cho phép đính kèm tệp hay base64 raw data trong email gửi người báo.
+
+### 3. Khóa Chống Trùng & Chính Sách Retry
+- **Khóa duy nhất (Idempotency Key)**: `(event_id, 'public_state_updated', recipient_user_id)`.
+- **Cơ chế chống gửi lặp**:
+  - Lần claim đầu tiên: ghi nhận bản ghi `pending` và trả `should_send=true` để phát thư.
+  - Các lần claim tiếp theo do retry/replay từ n8n hoặc mạng: trả `should_send=false` và bỏ qua gửi (`was_newly_sent=false`).
+- **Bất biến retry**:
+  - Không có bất kỳ worker hay luồng tự động nào được tự ý gửi lại các email ở trạng thái `sent` hoặc `uncertain`.
+  - Giúp loại bỏ hoàn toàn rủi ro người báo nhận hàng loạt thư trùng lặp khi hệ thống xảy ra timeout hoặc retry.
+
+### 4. Kiểm Thử Chấp Nhận W9
+Bộ kiểm thử chấp nhận W9 tại `backend/tests/test_automation_w9_integration.py` bao phủ toàn diện:
+- Tạo và định dạng thông báo cho đầy đủ 5 trạng thái công khai.
+- Từ chối trạng thái không hợp lệ hoặc trạng thái nội bộ.
+- Bộ lọc Content Safety chặn ghi chú nội bộ, link staff và mật khẩu.
+- Khóa chống trùng chặn gửi lặp khi retry qua repository và API `POST /internal/notifications/dispatch`.
+
+## 15. Kiểm Thử Khả Năng Chống Chịu Lỗi & Độ Tin Cậy T13–T15 (W10)
+
+Mốc W10 tập trung kiểm thử toàn diện các tình huống gián đoạn dịch vụ, duplicate delivery, lệch xung nhịp đồng hồ và phục hồi sau sự cố:
+
+### 1. T13: Chống Nhân Đôi Nghiệp Vụ & Duplicate Webhook
+- Khi event hoặc webhook bị phát lại nhiều lần do timeout hoặc retry mạng:
+  - Lần 1: Thực hiện evaluate và ghi nhận trạng thái `done`.
+  - Lần 2 trở đi: Nhánh duplicate của workflow n8n gọi `GET /internal/events/{id}` phát hiện trạng thái đã `done`, trả HTTP 200 `duplicate=true` và bỏ qua evaluate.
+  - Phân công (`assignment`), lịch sử (`status_history`) và phiên bản (`incident.version`) không bị nhân đôi.
+  - Notification dispatch được bảo vệ bằng khóa duy nhất `(event_id, kind, recipient_user_id)` nên không gửi email lặp.
+
+### 2. T14: n8n Ngoại Tuyến Khi Tạo Báo Cáo
+- Sự cố được lưu trữ an toàn trong PostgreSQL bất kể n8n đang chạy hay dừng hoạt động:
+  - API tạo báo cáo commit atomic dữ liệu sự cố và bản ghi outbox với `status='pending'`.
+  - Dispatcher gặp lỗi kết nối (`Connection refused` hoặc timeout) sẽ ghi nhận lỗi và áp dụng thuật toán exponential backoff có chặn trần (`max_backoff_seconds=300`).
+  - Khi n8n được khởi động lại, chu kỳ quét outbox tiếp theo lập tức claim và gửi lại sự kiện thành công mà không thất thoát bất kỳ báo cáo nào.
+
+### 3. T15: Lỗi Giao Nhận Email/API, Hàng Đợi Dead-Letter & Can Thiệp Quản Trị
+- Các lỗi tạm thời (5xx, timeout mạng) chuyển về `pending` với backoff để thử lại.
+- Các lỗi vĩnh viễn (4xx client error, payload sai cấu trúc) chuyển thẳng vào hàng đợi chết `failed` để tránh lãng phí lần thử.
+- Trạng thái `uncertain` (timeout khi phát mail) tuân thủ quy tắc bất biến: không bao giờ tự động gửi lại.
+- Quản trị viên (Admin) xem xét hàng đợi chết qua API/CLI và chỉ được quyền retry khi cung cấp lý do kiểm toán rõ ràng (`--reason`).
+
+### 4. Khả Năng Dung Lỗi Lệch Đồng Hồ (Clock Skew Tolerance)
+- Cửa sổ chấp nhận timestamp: dung sai tối đa **300 giây** cho cả quá khứ và tương lai.
+- Chữ ký có timestamp lệch trong khoảng [-300s, +300s] được xác thực thành công.
+- Chữ ký lệch quá 300s bị từ chối dứt khoát với mã lỗi 401 (`expired_timestamp` hoặc `future_timestamp`).
+
+### 5. Phục Hồi Sau Khởi Động Lại (Crash Recovery)
+- Worker gặp sự cố khi đang xử lý để lại các bản ghi ở trạng thái `processing`.
+- Khi worker khởi động lại, hàm `recover_interrupted_events()` tự động quét các bản ghi có lease đã hết hạn và chuyển về `pending` để tiếp tục chu trình xử lý mà không làm gián đoạn hệ thống.
+
+### 6. Bộ Kiểm Thử Chấp Nhận W10
+Toàn bộ kịch bản kiểm thử T13–T15 được thực thi tự động tại:
+`backend/tests/test_automation_w10_integration.py` (7/7 tests đạt 100%).
+
+## 16. Runbook Vận Hành, Dựng n8n Sạch và Xử Lý Sự Cố (W11)
+
+Mốc W11 hoàn thiện bộ hướng dẫn vận hành chuẩn (SOP / Runbook) giúp bất kỳ kỹ sư hoặc thành viên nào trong dự án có thể dễ dàng dựng môi trường n8n hoàn toàn mới, cấu hình credentials bảo mật, import và kích hoạt các workflow tự động hóa, kiểm tra hàng chờ lỗi (DLQ) và thực hiện các quy trình phục hồi hệ thống.
+
+Chi tiết toàn bộ tài liệu runbook nằm tại:
+👉 **[docs/n5-runbook.md](n5-runbook.md)**
+
+### Nội dung cốt lõi của Runbook W11:
+1. **Dựng môi trường n8n sạch**: Các bước dọn dẹp volume cũ, khởi chạy dịch vụ n8n bằng Docker Compose và khởi tạo tài khoản Owner an toàn lần đầu.
+2. **Quản lý Credentials ngoài Git**:
+   - Khởi tạo Header Auth credential `CIM Internal Service Bearer` (`Authorization: Bearer <token>`).
+   - Khởi tạo `CIM_WEBHOOK_HMAC_SECRET` để ký số webhook.
+   - Bật cờ `MOCK_EMAIL_SENDING=true` phục vụ kiểm thử gửi mail an toàn trong môi trường phát triển.
+3. **Danh mục 4 workflow chính thức**:
+   - `health-check.json` (ID: `CIMHealthCheck001`): Manual Trigger kiểm tra backend liveness.
+   - `event-processor.json` (ID: `CIMEventProcessor001`): Webhook xác thực chữ ký HMAC, chống trùng lặp và gọi evaluate incident.
+   - `notification-processor.json` (ID: `CIMNotificationProcessor001`): Webhook chuyển tiếp an toàn tới `/internal/notifications/dispatch`, tuân thủ Content Safety Guard.
+   - `sla-check.json` (ID: `CIMSlaScheduleCheck001`): Schedule trigger định kỳ 1 phút gọi `/internal/sla/check`, báo một lần/mức.
+4. **Kiểm tra hàng chờ lỗi (DLQ)**:
+   - Tra cứu qua REST API: `GET /internal/events/failed` và `GET /internal/dead-letter/summary`.
+   - Tra cứu qua Worker CLI: `--list-failed`, `--list-notifications --status <status>`.
+   - **Bất biến an toàn**: Trạng thái `uncertain` tuyệt đối không bao giờ được tự động gửi lại.
+5. **Quy trình phục hồi hệ thống**:
+   - Phục hồi khi worker crash / unclean shutdown với cờ `--recover`.
+   - Re-queue sự kiện lỗi và thông báo thủ công bắt buộc phải có giải thích `--reason "<lý do>"`.
+6. **Kịch bản kiểm thử nghiệm thu mẫu**:
+   - Test gửi email giả lập (reported, assigned, P1, public_state_updated).
+   - Test gửi webhook đã ký HMAC (`scripts/send-signed-event.py`) kiểm tra duplicate và clock skew.
+   - Mô phỏng n8n down và phục hồi qua worker.
+   - Kích hoạt rà soát SLA tức thời với `--check-sla`.
+
