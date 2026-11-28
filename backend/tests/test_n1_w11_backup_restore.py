@@ -112,9 +112,9 @@ def test_backup_and_restore_on_clean_database_allows_all_roles_to_login(
                         "/api/v1/auth/login",
                         json={"email": email, "password": DEFAULT_LARGE_PASSWORD},
                     )
-                    assert (
-                        login_resp.status_code == 200
-                    ), f"Role '{role_name}' ({email}) should log in with 200 on restored DB"
+                    assert login_resp.status_code == 200, (
+                        f"Role '{role_name}' ({email}) should log in with 200 on restored DB"
+                    )
                     body = login_resp.json()
                     assert "access_token" in body
                     assert body["user"]["role"] == role_name

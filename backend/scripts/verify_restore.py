@@ -68,9 +68,7 @@ def verify_database_restore(db_url: str | None = None, password: str = DEFAULT_P
                     f"[✓] Role '{role}' active user '{test_user.email}' authenticated successfully!"
                 )
             else:
-                print(
-                    f"[!] Role '{role}' user '{test_user.email}' did not match password."
-                )
+                print(f"[!] Role '{role}' user '{test_user.email}' did not match password.")
 
         return all_passed
 
