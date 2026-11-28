@@ -18,6 +18,8 @@
     "test:n6:w5": "node --experimental-strip-types test-n6-w5.ts",
     "test:n6:w6": "node --experimental-strip-types test-n6-w6.ts",
     "test:n6:w7": "node --experimental-strip-types test-n6-w7.ts",
+    "test:n6:w8": "node --experimental-strip-types test-n6-w8.ts",
+    "test:n6:w9": "node --experimental-strip-types test-n6-w9.ts",
     "preview": "vite preview"
   },
   "dependencies": {
