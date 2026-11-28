@@ -12,13 +12,10 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
 
 from app.auth.security import hash_password
 from app.core.config import get_settings
-from app.incidents.models import Incident
 from app.models import Department, User
-from app.rules.engine import evaluate_incident
 
 PASSWORD = "w9-transfer-visibility-pass"
 
@@ -93,26 +90,13 @@ def create_incident(client, headers):
     return response.json()
 
 
-def apply_rule(case, incident_id):
-    """Stand-in for N3's create/triage integration (their W8 branch)."""
-    incident = case.db.get(Incident, incident_id)
-    result = evaluate_incident(incident.category, incident.answers)
-    department = case.db.scalar(select(Department).where(Department.name == result.department))
-    assert department is not None, result
-    incident.department_id = department.id
-    incident.priority = result.priority
-    incident.severity = result.severity
-    incident.rule_evaluation = result.model_dump(mode="json")
-    incident.triage_required = False
-    case.db.commit()
-    return result
-
-
 def prepare_transferred_incident(client, case):
     """Create, triage, assign, attach, comment, then transfer. Returns ids."""
     created = create_incident(client, case.headers["reporter"])
     incident_id = UUID(created["id"])
-    apply_rule(case, incident_id)
+    # Creation itself applies the real demo-v1 rule (N3, merged in main).
+    assert created["department_id"] == str(case.facilities.id)
+    assert created["priority"] == "p1"
 
     assigned = client.post(
         f"/api/v1/incidents/{incident_id}/assign",
