@@ -346,3 +346,39 @@ Bộ kiểm thử chấp nhận tích hợp W8 tại `backend/tests/test_automat
 - Đầy đủ các domain event thực tế từ N3 và N4.
 - Bất biến kiểm tra SLA báo một lần/mức và dispatch event `sla.escalated`.
 - Kiểm thử workflow file JSON và cờ CLI `--check-sla`.
+
+## 14. Email Cập Nhật Public State, Khóa Chống Trùng và Giới Hạn Nội Dung (W9)
+
+Nhằm bảo đảm người báo sự cố luôn được thông báo minh bạch về tiến độ công khai mà không làm lộ dữ liệu nội bộ:
+
+### 1. Kịch bản Thông báo Public State (`public_state_updated`)
+- **Đối tượng nhận**: Người báo sự cố (`reporter_user_id`, email: `reporter@demo.invalid`).
+- **Trạng thái công khai hợp lệ**: `assigned` (Đã phân công), `in_progress` (Đang xử lý), `resolved` (Đã khắc phục), `closed` (Đã đóng), `reopened` (Mở lại).
+- **Tiêu đề**: `[CIM] Cập nhật tiến độ sự cố #{short_id}: {state_display}`.
+- **Nội dung công khai**:
+  - Mã sự cố, tên trạng thái công khai mới, thời gian cập nhật (UTC).
+  - Kết quả xử lý công khai (`resolution_summary`) khi sự cố được giải quyết (`resolved`).
+  - Đường dẫn theo dõi công khai: `http://localhost:5173/incidents/{incident_id}`.
+
+### 2. Chính Sách Giới Hạn Nội Dung Nghiêm Ngặt (Content Safety Guards)
+Hàm `validate_notification_safety()` và `build_public_state_notification()` chặn ngay lập tức nếu phát hiện:
+- **Ghi chú nội bộ**: Tuyệt đối không cho phép `[internal]`, `internal_note`, `internal_comment`, `visibility: internal`, `handler_note`, `triage_reason`.
+- **Đường dẫn quản trị staff**: Người báo tuyệt đối không nhận link portal nội bộ (`/staff/incidents/*`).
+- **Mật khẩu & Bí mật**: Tuyệt đối cấm xuất hiện `password`, `Bearer token`, `access_token`, secret.
+- **Tệp đính kèm & Binary**: Không cho phép đính kèm tệp hay base64 raw data trong email gửi người báo.
+
+### 3. Khóa Chống Trùng & Chính Sách Retry
+- **Khóa duy nhất (Idempotency Key)**: `(event_id, 'public_state_updated', recipient_user_id)`.
+- **Cơ chế chống gửi lặp**:
+  - Lần claim đầu tiên: ghi nhận bản ghi `pending` và trả `should_send=true` để phát thư.
+  - Các lần claim tiếp theo do retry/replay từ n8n hoặc mạng: trả `should_send=false` và bỏ qua gửi (`was_newly_sent=false`).
+- **Bất biến retry**:
+  - Không có bất kỳ worker hay luồng tự động nào được tự ý gửi lại các email ở trạng thái `sent` hoặc `uncertain`.
+  - Giúp loại bỏ hoàn toàn rủi ro người báo nhận hàng loạt thư trùng lặp khi hệ thống xảy ra timeout hoặc retry.
+
+### 4. Kiểm Thử Chấp Nhận W9
+Bộ kiểm thử chấp nhận W9 tại `backend/tests/test_automation_w9_integration.py` bao phủ toàn diện:
+- Tạo và định dạng thông báo cho đầy đủ 5 trạng thái công khai.
+- Từ chối trạng thái không hợp lệ hoặc trạng thái nội bộ.
+- Bộ lọc Content Safety chặn ghi chú nội bộ, link staff và mật khẩu.
+- Khóa chống trùng chặn gửi lặp khi retry qua repository và API `POST /internal/notifications/dispatch`.

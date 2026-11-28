@@ -163,3 +163,19 @@ backend\.venv\Scripts\python.exe -m app.automation.run_worker --check-sla
 # Chạy kiểm thử tự động toàn diện W8:
 backend\.venv\Scripts\python.exe -m pytest -q backend/tests/test_automation_w8_integration.py
 ```
+
+---
+
+## 6. Workflow thông báo cập nhật Public State (`notification-processor.json` — N5 W9)
+
+`notification-processor.json` được cập nhật trong W9 để hỗ trợ kịch bản gửi email thông báo trạng thái công khai (`public_state_updated`) cho người báo sự cố:
+
+- Nhận POST webhook tại `http://localhost:5678/webhook/notifications` với các trường mở rộng:
+  - `scenario = "public_state_updated"`
+  - `new_state = "assigned" | "in_progress" | "resolved" | "closed" | "reopened"`
+  - `resolution_summary = "Mô tả kết quả xử lý công khai (chỉ có khi resolved)"`
+- Node `Dispatch Safe Email` chuyển tiếp dữ liệu an toàn tới `POST /internal/notifications/dispatch`.
+- **Chính sách an toàn**:
+  - Người báo chỉ nhận thông tin và đường dẫn công khai `/incidents/{id}`.
+  - Tuyệt đối lọc bỏ mọi ghi chú nội bộ (`internal_notes`, `[internal]`), link staff (`/staff/*`) hoặc bí mật.
+  - Áp dụng khóa chống trùng `(event_id, 'public_state_updated', recipient_user_id)`: retry từ n8n không tạo thêm email lặp ngoài chính sách.

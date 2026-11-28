@@ -12,6 +12,7 @@ from app.automation.notifications import (
     DemoEmailSender,
     build_assigned_notification,
     build_p1_alert_notification,
+    build_public_state_notification,
     build_reported_notification,
     dispatch_notification_task,
 )
@@ -136,7 +137,7 @@ class DispatchNotificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: uuid.UUID
-    scenario: Literal["reported", "assigned", "p1"]
+    scenario: Literal["reported", "assigned", "p1", "public_state_updated"]
     recipient_user_id: uuid.UUID
     recipient_email: str = Field(min_length=3, max_length=255)
     incident_id: uuid.UUID
@@ -144,6 +145,8 @@ class DispatchNotificationRequest(BaseModel):
     department_name: str | None = None
     priority: str | None = None
     reason: str | None = None
+    new_state: str | None = None
+    resolution_summary: str | None = None
     frontend_base_url: str = "http://localhost:5173"
     simulate_outcome: Literal["sent", "failed", "uncertain"] | None = None
 
@@ -733,6 +736,26 @@ def dispatch_test_notification_endpoint(
             reason=payload.reason,
             frontend_base_url=payload.frontend_base_url,
         )
+    elif payload.scenario == "public_state_updated":
+        if not payload.new_state:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Field 'new_state' is required for 'public_state_updated' scenario",
+            )
+        try:
+            email_obj = build_public_state_notification(
+                incident_id=payload.incident_id,
+                reporter_user_id=payload.recipient_user_id,
+                reporter_email=payload.recipient_email,
+                new_state=payload.new_state,
+                resolution_summary=payload.resolution_summary,
+                frontend_base_url=payload.frontend_base_url,
+            )
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
+            ) from err
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
