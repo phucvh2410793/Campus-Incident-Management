@@ -187,6 +187,8 @@ class OutboxRepository:
 
         Idempotent if the event is already pending or done.
         """
+        if not reason or not reason.strip():
+            raise ValueError("Admin retry requires a reason")
         current_time = now or _utc_now()
         record = self.session.get(OutboxEvent, event_id)
         if not record:

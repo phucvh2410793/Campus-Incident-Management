@@ -382,3 +382,39 @@ Bộ kiểm thử chấp nhận W9 tại `backend/tests/test_automation_w9_integ
 - Từ chối trạng thái không hợp lệ hoặc trạng thái nội bộ.
 - Bộ lọc Content Safety chặn ghi chú nội bộ, link staff và mật khẩu.
 - Khóa chống trùng chặn gửi lặp khi retry qua repository và API `POST /internal/notifications/dispatch`.
+
+## 15. Kiểm Thử Khả Năng Chống Chịu Lỗi & Độ Tin Cậy T13–T15 (W10)
+
+Mốc W10 tập trung kiểm thử toàn diện các tình huống gián đoạn dịch vụ, duplicate delivery, lệch xung nhịp đồng hồ và phục hồi sau sự cố:
+
+### 1. T13: Chống Nhân Đôi Nghiệp Vụ & Duplicate Webhook
+- Khi event hoặc webhook bị phát lại nhiều lần do timeout hoặc retry mạng:
+  - Lần 1: Thực hiện evaluate và ghi nhận trạng thái `done`.
+  - Lần 2 trở đi: Nhánh duplicate của workflow n8n gọi `GET /internal/events/{id}` phát hiện trạng thái đã `done`, trả HTTP 200 `duplicate=true` và bỏ qua evaluate.
+  - Phân công (`assignment`), lịch sử (`status_history`) và phiên bản (`incident.version`) không bị nhân đôi.
+  - Notification dispatch được bảo vệ bằng khóa duy nhất `(event_id, kind, recipient_user_id)` nên không gửi email lặp.
+
+### 2. T14: n8n Ngoại Tuyến Khi Tạo Báo Cáo
+- Sự cố được lưu trữ an toàn trong PostgreSQL bất kể n8n đang chạy hay dừng hoạt động:
+  - API tạo báo cáo commit atomic dữ liệu sự cố và bản ghi outbox với `status='pending'`.
+  - Dispatcher gặp lỗi kết nối (`Connection refused` hoặc timeout) sẽ ghi nhận lỗi và áp dụng thuật toán exponential backoff có chặn trần (`max_backoff_seconds=300`).
+  - Khi n8n được khởi động lại, chu kỳ quét outbox tiếp theo lập tức claim và gửi lại sự kiện thành công mà không thất thoát bất kỳ báo cáo nào.
+
+### 3. T15: Lỗi Giao Nhận Email/API, Hàng Đợi Dead-Letter & Can Thiệp Quản Trị
+- Các lỗi tạm thời (5xx, timeout mạng) chuyển về `pending` với backoff để thử lại.
+- Các lỗi vĩnh viễn (4xx client error, payload sai cấu trúc) chuyển thẳng vào hàng đợi chết `failed` để tránh lãng phí lần thử.
+- Trạng thái `uncertain` (timeout khi phát mail) tuân thủ quy tắc bất biến: không bao giờ tự động gửi lại.
+- Quản trị viên (Admin) xem xét hàng đợi chết qua API/CLI và chỉ được quyền retry khi cung cấp lý do kiểm toán rõ ràng (`--reason`).
+
+### 4. Khả Năng Dung Lỗi Lệch Đồng Hồ (Clock Skew Tolerance)
+- Cửa sổ chấp nhận timestamp: dung sai tối đa **300 giây** cho cả quá khứ và tương lai.
+- Chữ ký có timestamp lệch trong khoảng [-300s, +300s] được xác thực thành công.
+- Chữ ký lệch quá 300s bị từ chối dứt khoát với mã lỗi 401 (`expired_timestamp` hoặc `future_timestamp`).
+
+### 5. Phục Hồi Sau Khởi Động Lại (Crash Recovery)
+- Worker gặp sự cố khi đang xử lý để lại các bản ghi ở trạng thái `processing`.
+- Khi worker khởi động lại, hàm `recover_interrupted_events()` tự động quét các bản ghi có lease đã hết hạn và chuyển về `pending` để tiếp tục chu trình xử lý mà không làm gián đoạn hệ thống.
+
+### 6. Bộ Kiểm Thử Chấp Nhận W10
+Toàn bộ kịch bản kiểm thử T13–T15 được thực thi tự động tại:
+`backend/tests/test_automation_w10_integration.py` (7/7 tests đạt 100%).
