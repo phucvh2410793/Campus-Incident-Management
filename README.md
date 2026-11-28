@@ -15,6 +15,7 @@ Tên đề tài trong proposal: **Campus Incident Management**. Chuyên ngành: 
 - [Kế hoạch kiểm tra](docs/test-plan.md)
 - [Bảo mật](SECURITY.md)
 - [Workflow n8n mẫu](workflows/README.md)
+- [Vận hành tài khoản & CSDL (Runbook N1)](docs/runbooks/identity-and-database.md)
 
 Kế hoạch giao cố định một mảng cho mỗi vị trí N1–N7: tài khoản/quyền, tiếp nhận/dữ liệu, phân loại/SLA, vòng đời xử lý, n8n/thông báo, giao diện người báo và giao diện nhân viên. Cả 7 mảng bắt đầu từ 12/10/2026 bằng API contract và fixture/mock, ghép nối theo mốc chung, hoàn tất mã nguồn và kiểm thử trước 04/01/2027. Tên thành viên được nhập trong file Excel phân công; tài liệu kế hoạch dùng mã N1–N7 để không phụ thuộc tên.
 
@@ -218,6 +219,24 @@ npm run build
 .venv/Scripts/ruff.exe check .
 .venv/Scripts/ruff.exe format --check .
 .venv/Scripts/python.exe -m pytest -q
+```
+
+### Sao lưu, phục hồi và xác minh tài khoản (N1)
+
+Chi tiết quy trình xem tại [Runbook tài khoản & cơ sở dữ liệu](docs/runbooks/identity-and-database.md).
+
+```bash
+# 1. Seed tài khoản mẫu lớn đa vai trò (8 bộ phận, 35+ users)
+python -m app.auth.seed_large
+
+# 2. Sao lưu database ra file nén
+python scripts/backup_db.py --out backups/campus_incident_backup.sql.gz
+
+# 3. Phục hồi DB sạch từ bản sao lưu
+python scripts/restore_db.py --input backups/campus_incident_backup.sql.gz
+
+# 4. Xác minh tính toàn vẹn và đăng nhập đủ 4 vai trò
+python scripts/verify_restore.py
 ```
 
 Không commit `.env`, token hoặc credentials. Script tạo `.env` có thể chạy nhiều lần mà không thay key đã tồn tại.
