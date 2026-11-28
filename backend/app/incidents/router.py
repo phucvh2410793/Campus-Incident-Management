@@ -22,12 +22,18 @@ from app.incidents.schemas import (
     IncidentPage,
     IncidentResponse,
     IncidentSummary,
+    ManualTriageRequest,
+    ReevaluateIncidentRequest,
+    RuleEvaluationResponse,
     validate_incident_create,
 )
 from app.incidents.service import (
     IdempotencyKeyConflict,
     create_incident,
+    get_rule_evaluation_history,
     list_incidents,
+    manual_triage,
+    reevaluate_incident,
     visible_incidents,
 )
 from app.workflow.contracts import WorkflowViolation
@@ -72,6 +78,11 @@ def _request_id(request: Request) -> UUID:
         return UUID(request.headers.get("X-Request-ID", ""))
     except ValueError:
         return uuid4()
+
+
+RequestId = Annotated[UUID, Depends(_request_id)]
+DbSession = Annotated[Session, Depends(get_db)]
+CurrentPrincipal = Annotated[Principal, Depends(get_principal)]
 
 
 def error_response(status_code: int, code: str, message: str, request_id: UUID, details=None):
@@ -215,3 +226,67 @@ def get_incident(
     result = IncidentResponse.model_validate(incident)
     staff_scope = IncidentPolicy().can_operate(principal, incident)
     return result if staff_scope else result.model_copy(update={"assigned_handler_id": None})
+
+
+@router.get(
+    "/{incident_id}/rule-evaluations",
+    response_model=list[RuleEvaluationResponse],
+)
+def rule_evaluation_history(
+    incident_id: UUID,
+    db: DbSession,
+    principal: CurrentPrincipal,
+):
+    return get_rule_evaluation_history(db, principal, incident_id)
+
+
+@router.post(
+    "/{incident_id}/triage",
+    response_model=IncidentResponse,
+)
+def triage_incident(
+    incident_id: UUID,
+    payload: ManualTriageRequest,
+    request_id: RequestId,
+    db: DbSession,
+    principal: CurrentPrincipal,
+):
+    try:
+        incident = manual_triage(
+            db,
+            principal,
+            incident_id,
+            payload,
+            request_id,
+        )
+        db.commit()
+        return IncidentResponse.model_validate(incident)
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post(
+    "/{incident_id}/reevaluate",
+    response_model=IncidentResponse,
+)
+def reevaluate_incident_route(
+    incident_id: UUID,
+    payload: ReevaluateIncidentRequest,
+    request_id: RequestId,
+    db: DbSession,
+    principal: CurrentPrincipal,
+):
+    try:
+        incident = reevaluate_incident(
+            db,
+            principal,
+            incident_id,
+            payload.expected_version,
+            request_id,
+        )
+        db.commit()
+        return IncidentResponse.model_validate(incident)
+    except Exception:
+        db.rollback()
+        raise

@@ -30,6 +30,10 @@ class WorkflowRepository:
             "assigned_handler_id",
             "version",
             "priority",
+            "severity",
+            "triage_required",
+            "manual",
+            "department_changed",
             "acknowledgment_deadline_at",
             "reason",
             "disposition",
@@ -53,6 +57,13 @@ class WorkflowRepository:
                     UUID(value)
                 if key == "priority" and value not in {None, "p1", "p2", "p3"}:
                     raise ValueError("Invalid audit priority")
+                if key == "severity" and value not in {None, "low", "medium", "high", "critical"}:
+                    raise ValueError("Invalid audit severity")
+                if (
+                    key in {"triage_required", "manual", "department_changed"}
+                    and type(value) is not bool
+                ):
+                    raise ValueError("Invalid audit flag")
                 if key == "reason" and (not isinstance(value, str) or not value.strip()):
                     raise ValueError("Invalid audit reason")
                 if key == "acknowledgment_deadline_at" and value is not None:
