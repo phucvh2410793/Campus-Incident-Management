@@ -142,3 +142,24 @@ backend\.venv\Scripts\python.exe -m app.automation.run_worker --retry-notificati
 ```
 
 Acceptance test tự động của W6 & W7 nằm tại `backend/tests/test_automation_notifications.py`.
+
+---
+
+## 5. Workflow kiểm tra SLA định kỳ (`sla-check.json` — N5 W8)
+
+`sla-check.json` là workflow n8n chạy theo lịch định kỳ (cron/schedule trigger) để kích hoạt rà soát thời hạn tiếp nhận SLA:
+
+- **Schedule Trigger**: Kích hoạt định kỳ mỗi 1 phút (hoặc theo cấu hình khoảng thời gian).
+- **Check Overdue SLA**: Gửi HTTP POST tới `http://backend:8000/internal/sla/check` với Header Auth credential `CIM Internal Service Bearer`.
+- **Escalations Created?**: Kiểm tra response `escalations_created > 0`.
+- **Log Escalation Summary**: Ghi nhận tóm tắt số lượng sự cố đã kiểm tra và số sự cố được leo thang.
+- **Quy tắc bất biến: Báo một lần/mức**: Mỗi sự cố quá hạn chỉ được nâng cấp đúng 1 lần cho mỗi cấp độ (`level=1`). Khi có sự cố leo thang mới, backend tự động sinh event `sla.escalated` vào outbox để kích hoạt thông báo cảnh báo P1 cho quản lý trực ban.
+
+### Chạy thử và kiểm tra SLA
+```powershell
+# Chạy kiểm tra SLA tức thời qua backend CLI:
+backend\.venv\Scripts\python.exe -m app.automation.run_worker --check-sla
+
+# Chạy kiểm thử tự động toàn diện W8:
+backend\.venv\Scripts\python.exe -m pytest -q backend/tests/test_automation_w8_integration.py
+```

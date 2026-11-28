@@ -180,6 +180,33 @@ class OutboxWorkerStub:
             logger.warning("Worker %s recovered %d interrupted event(s)", self.worker_id, recovered)
         return recovered
 
+    def check_sla(self, now: datetime | None = None) -> tuple[int, int]:
+        """Trigger an SLA review cycle on overdue incidents (W8).
+
+        Returns (checked_count, escalations_created).
+        Escalations generate outbox events (EventType.SLA_ESCALATED) that will
+        be claimed and dispatched in subsequent worker cycles.
+        """
+        from datetime import UTC, datetime
+
+        from app.sla.service import SlaEscalationService
+
+        check_time = now or datetime.now(UTC)
+        with self.session_factory() as session:
+            try:
+                checked, created = SlaEscalationService(session).check(now=check_time)
+                session.commit()
+                if created > 0:
+                    logger.info(
+                        "SLA check created %d escalation(s) out of %d checked",
+                        created,
+                        checked,
+                    )
+                return checked, created
+            except Exception:
+                session.rollback()
+                raise
+
     # ------------------------------------------------------------------
     # Main cycle
     # ------------------------------------------------------------------

@@ -436,7 +436,77 @@ def evaluate_internal_event(
         cached = _IN_MEMORY_EVALUATIONS[event_id]
         return EvaluateResponse(**cached)
 
-    # 3. Default demo evaluation result (W3 milestone contract baseline)
+    # 3. Evaluate real incident if present in DB (W8 milestone integration)
+    if db is not None:
+        try:
+            import sqlalchemy as sa
+
+            from app.auth.seed_demo import DEMO_DEPARTMENTS
+            from app.incidents.models import Incident
+            from app.models import Department
+            from app.rules.engine import evaluate_incident
+
+            incident = db.get(Incident, incident_id)
+            if incident is not None:
+                rule_res = evaluate_incident(incident.category, incident.answers or {})
+
+                dept = None
+                if rule_res.department:
+                    dept = db.scalar(
+                        sa.select(Department).where(Department.name == rule_res.department)
+                    )
+
+                dept_map = {name: did for did, name in DEMO_DEPARTMENTS}
+                department_id = (
+                    dept.id
+                    if dept
+                    else dept_map.get(
+                        rule_res.department,
+                        uuid.UUID("20000000-0000-4000-8000-000000000001"),
+                    )
+                )
+
+                severity = rule_res.severity or "medium"
+                priority = (rule_res.priority or "p2").upper()
+                rule_id = rule_res.rule_id or "demo-v1"
+                reason = rule_res.reason
+
+                incident.severity = rule_res.severity or incident.severity
+                incident.priority = (rule_res.priority or incident.priority or "p2").lower()
+                incident.department_id = department_id
+                incident.triage_required = rule_res.triage_required
+                incident.rule_evaluation = {
+                    "rule_id": rule_res.rule_id,
+                    "severity": rule_res.severity,
+                    "priority": rule_res.priority,
+                    "department": rule_res.department,
+                    "reason": rule_res.reason,
+                    "triage_required": rule_res.triage_required,
+                    "safety_flags": list(rule_res.safety_flags) if rule_res.safety_flags else [],
+                    "run_id": payload.run_id,
+                }
+                db.commit()
+
+                eval_result = {
+                    "incident_id": incident_id,
+                    "status": incident.status,
+                    "severity": severity,
+                    "priority": priority,
+                    "department_id": department_id,
+                    "rule_id": rule_id,
+                    "rule_version": 1,
+                    "reason": reason,
+                    "triage_required": rule_res.triage_required,
+                    "incident_version": incident.version,
+                }
+                _IN_MEMORY_EVALUATIONS[event_id] = eval_result
+                return EvaluateResponse(**eval_result)
+        except Exception:
+            db.rollback()
+            # If DB lookup or rule engine fails, fallback gracefully to contract baseline
+            pass
+
+    # 4. Default demo evaluation result (W3 milestone contract baseline)
     eval_result = {
         "incident_id": incident_id,
         "status": "assigned",

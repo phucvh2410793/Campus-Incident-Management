@@ -307,3 +307,42 @@ backend\.venv\Scripts\python.exe -m app.automation.run_worker --retry-notificati
 ### Kiểm thử W6 & W7
 Bộ kiểm thử chấp nhận toàn diện cho W6 và W7 được triển khai tại:
 `backend/tests/test_automation_notifications.py` (34 test cases bao phủ kịch bản gửi đúng người/link, chặn file/secret/ghi chú nội bộ, dead-letter, lý do admin retry, và bất biến uncertain).
+
+## 13. Ghép Event Thật Từ N2/N3/N4, Workflow Evaluate và Schedule SLA Check (W8)
+
+Nhằm hoàn thiện luồng tích hợp tự động hóa cho mốc W8:
+
+### 1. Ghép Event Thật từ N2/N3/N4
+Các sự kiện nghiệp vụ thực tế được liên kết đồng bộ qua bảng transactional outbox:
+- **N2 (`incident.reported`)**: Khi người báo gửi sự cố mới qua API `/api/v1/incidents`, bản ghi sự cố và event `incident.reported` được commit atomic trong cùng transaction.
+- **N4 (`incident.assigned` & `incident.priority_changed`)**: Khi cán bộ phân công kỹ thuật viên hoặc điều chỉnh priority, sự kiện được ghi nhận vào outbox để kích hoạt thông báo n8n.
+- **N3 (`sla.escalated`)**: Khi tác vụ rà soát SLA phát hiện sự cố quá hạn chưa được tiếp nhận, bản ghi leo thang (escalation) và event `sla.escalated` được lưu atomic vào outbox.
+
+### 2. Ba ca MVP Đi Xuyên Backend → n8n → Backend
+Luồng khép kín hoàn chỉnh giữa backend và n8n:
+1. **Rò nước (`water_leak`)**: Dữ liệu khảo sát (ví dụ: nước gần điện `near_electricity="yes"`) đi qua n8n -> gọi `/internal/events/{id}/evaluate` -> bộ quy tắc Rule Engine N3 khớp quy tắc **R03**, gán priority **P1**, bộ phận **Cơ sở vật chất**, cập nhật incident trong DB -> n8n gọi `/internal/events/{id}/complete` chuyển event thành `done`.
+2. **Nguy hiểm điện (`electrical_hazard`)**: Dấu hiệu khói/tia lửa (`smoke_or_sparks="yes"`) -> khớp quy tắc **R01**, priority **P1**, bộ phận **Điện và an toàn**, severity **critical**.
+3. **Lừa đảo (`phishing`)**: Đã nhập thông tin (`interaction="entered_information"`) -> khớp quy tắc **R02**, priority **P1**, bộ phận **IT/Security**, severity **high**.
+
+Tất cả các lệnh gọi `/evaluate` có tính idempotent cao: nếu gọi lại cùng một event, hệ thống trả về kết quả nhất quán mà không tính toán lại hay ghi đè sai lệch dữ liệu.
+
+### 3. Workflow Schedule SLA Check và Bất Biến "Báo Một Lần/Mức"
+- **Workflow n8n (`workflows/sla-check.json`)**:
+  - `Schedule Trigger`: Định kỳ 1 phút (hoặc theo cấu hình cron) tự động kích hoạt.
+  - Gọi `POST /internal/sla/check` với service bearer token để quét toàn bộ sự cố đang ở trạng thái `reported` hoặc `assigned` đã quá deadline tiếp nhận (`acknowledgment_deadline_at`).
+- **Quy tắc bất biến: SLA báo một lần/mức**:
+  - Mỗi sự cố chỉ được phép tạo đúng 1 bản ghi `escalations` cho mỗi cấp độ (`level=1`).
+  - Lệnh gọi định kỳ lặp lại sẽ bỏ qua các sự cố đã được leo thang ở mức này (`escalations_created=0`), đảm bảo không spam cảnh báo hay lặp event vô hạn.
+  - Bản ghi leo thang mới sẽ phát sinh event `sla.escalated` vào outbox để dispatcher chuyển tiếp sang n8n gửi email khẩn cấp cho Quản lý trực ban.
+- **CLI hỗ trợ**:
+  ```powershell
+  # Chạy kiểm tra SLA ngay lập tức từ dòng lệnh
+  backend\.venv\Scripts\python.exe -m app.automation.run_worker --check-sla
+  ```
+
+### 4. Kiểm Thử Chấp Nhận W8
+Bộ kiểm thử chấp nhận tích hợp W8 tại `backend/tests/test_automation_w8_integration.py` bao phủ:
+- Luồng 3 ca MVP đi xuyên backend -> n8n -> backend.
+- Đầy đủ các domain event thực tế từ N3 và N4.
+- Bất biến kiểm tra SLA báo một lần/mức và dispatch event `sla.escalated`.
+- Kiểm thử workflow file JSON và cờ CLI `--check-sla`.
