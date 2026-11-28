@@ -309,6 +309,40 @@ def test_w8_mvp_water_leak_end_to_end(client: TestClient, db_session: Session, s
     assert dup_result["status"] == "duplicate"
 
 
+def test_w8_evaluation_failure_does_not_report_demo_success(
+    client: TestClient, db_session: Session, monkeypatch
+):
+    incident = Incident(
+        reporter_id=uuid.UUID("10000000-0000-4000-8000-000000000001"),
+        category="water_leak",
+        title="Water leak near the electrical room",
+        description="A large leak was found near the electrical room on campus.",
+        building="Building A",
+        answers={"near_electricity": "yes"},
+    )
+    db_session.add(incident)
+    db_session.flush()
+    event = OutboxEventPublisher(db_session).create_and_publish(
+        event_type=EventType.INCIDENT_REPORTED,
+        incident_id=incident.id,
+        request_id=SAMPLE_REQUEST_ID,
+    )
+    db_session.commit()
+
+    def fail_evaluation(*args, **kwargs):
+        raise RuntimeError("rule engine unavailable")
+
+    monkeypatch.setattr("app.rules.engine.evaluate_incident", fail_evaluation)
+    response = client.post(
+        f"/internal/events/{event.event_id}/evaluate",
+        json={"run_id": "failed-evaluation"},
+        headers=SERVICE_HEADERS,
+    )
+    assert response.status_code == 503
+    db_session.refresh(incident)
+    assert incident.rule_evaluation is None
+
+
 def test_w8_mvp_electrical_hazard_end_to_end(client: TestClient, db_session: Session):
     """MVP 2: Nguy hiểm điện (electrical_hazard) có khói/tia lửa -> R01 -> P1 Điện và an toàn."""
     reporter_id = uuid.UUID("10000000-0000-4000-8000-000000000001")

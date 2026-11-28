@@ -75,17 +75,8 @@ Hệ thống N5 chịu trách nhiệm bảo đảm thông điệp và sự kiệ
 - Môi trường Backend (FastAPI) và PostgreSQL đang chạy ổn định.
 - Cổng `5678` (n8n Web UI & Webhooks) và cổng `8000` (Backend) chưa bị tiến trình khác chiếm dụng.
 
-### 2.2. Xóa dữ liệu cũ để tạo trạng thái hoàn toàn sạch (Clean State)
-Nếu đã từng chạy n8n trước đó và muốn dựng lại từ đầu:
-
-```powershell
-# Dừng container n8n và xóa volume dữ liệu
-docker compose down n8n
-docker volume rm campus-incident-management_n8n_data
-
-# Hoặc nếu chạy compose project mặc định:
-docker volume ls | Select-String "n8n_data"
-```
+### 2.2. Chuẩn bị môi trường sạch
+Trên máy hoặc Compose project mới, `docker compose up -d n8n` sẽ tạo volume n8n trống. Nếu đã có n8n đang chạy, hãy dùng tiếp dữ liệu hiện tại hoặc tạo một Compose project thử nghiệm riêng; không xóa volume của hệ thống đang dùng. Trước khi import lại workflow, kiểm tra các workflow có cùng ID trong n8n để tránh ghi đè cấu hình đã chỉnh trên UI.
 
 ### 2.3. Khởi chạy n8n bằng Docker Compose
 Dự án đã định nghĩa dịch vụ `n8n` chuẩn tại `compose.yaml`:
@@ -211,10 +202,10 @@ Hệ thống N5 phân tách hàng chờ lỗi làm 2 phân vùng độc lập:
 
 ### 5.1. Tra cứu qua Backend REST API
 
-Quản trị viên có thể sử dụng Service Bearer token để truy vấn nhanh:
+Người vận hành có Service Bearer token có thể truy vấn nhanh. Lấy token từ cấu hình riêng của môi trường; không ghi token vào tài liệu hoặc lịch sử lệnh:
 
 ```powershell
-$headers = @{ "Authorization" = "Bearer cim-internal-token-secret-change-me" }
+$headers = @{ "Authorization" = "Bearer $env:CIM_INTERNAL_SERVICE_TOKEN" }
 
 # 1. Xem danh sách các outbox event bị rơi vào dead-letter
 Invoke-RestMethod -Uri "http://localhost:8000/internal/events/failed?limit=50" -Headers $headers -Method Get | ConvertTo-Json
@@ -235,7 +226,7 @@ Dữ liệu trả về mẫu:
 
 ### 5.2. Tra cứu qua Worker CLI
 
-Từ thư mục `backend/`, quản trị viên có thể sử dụng công cụ dòng lệnh chuyên dụng:
+Từ thư mục gốc repo, quản trị viên có thể sử dụng công cụ dòng lệnh chuyên dụng:
 
 ```powershell
 # 1. Liệt kê tất cả outbox event bị dead-letter
@@ -390,12 +381,12 @@ backend\.venv\Scripts\python.exe scripts\send-signed-event.py `
    backend\.venv\Scripts\python.exe -m app.automation.run_worker --once
    ```
    - Worker báo lỗi kết nối webhook (`Connection refused`).
-   - Sự kiện không bị mất mà được bảo lưu an toàn trong bảng `outbox_events` với `status = 'pending'`, `attempt_count = 1` kèm backoff.
+   - Sự kiện vẫn nằm trong `outbox_events` ở trạng thái chờ retry; kiểm tra `next_attempt_at` trước khi chạy worker lần nữa.
 4. Bật lại n8n:
    ```powershell
    docker compose start n8n
    ```
-5. Chờ vài giây để n8n khởi động, sau đó chạy lại worker:
+5. Chờ n8n sẵn sàng và tới thời điểm `next_attempt_at`, sau đó chạy lại worker:
    ```powershell
    backend\.venv\Scripts\python.exe -m app.automation.run_worker --once
    ```
@@ -415,7 +406,7 @@ Kết quả hiển thị:
 ```text
 SLA check completed: X incident(s) checked, Y escalation(s) created
 ```
-Nếu có sự cố quá hạn SLA, bản ghi leo thang `sla_escalations` được tạo và sự kiện `sla.escalated` tự động được ghi vào Outbox để gửi cảnh báo tới quản lý trực ban. Mỗi sự cố chỉ được leo thang đúng 1 lần cho mỗi cấp độ (`Báo một lần/mức`).
+Nếu có sự cố quá hạn SLA, bản ghi leo thang `escalations` được tạo và sự kiện `sla.escalated` được ghi vào Outbox. Mỗi sự cố chỉ được leo thang một lần cho mỗi cấp độ.
 
 ---
 

@@ -15,7 +15,10 @@ Acceptance criteria (W9 · 07/12/2026–13/12/2026):
    - 'sent' and 'uncertain' notifications are never automatically re-dispatched.
 """
 
+import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
@@ -241,11 +244,70 @@ def test_public_state_notification_idempotency_in_repository(db_session: Session
     assert notif2.status == "sent"
 
 
+def test_public_state_claim_is_atomic_across_postgresql_sessions():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("PostgreSQL test database is not configured")
+
+    engine = create_engine(database_url)
+    reporter_id = uuid.uuid4()
+    event_id = uuid.uuid4()
+    barrier = Barrier(2)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                User.__table__.insert().values(
+                    id=reporter_id,
+                    email=f"{reporter_id}@demo.invalid",
+                    display_name="Concurrent claim reporter",
+                    password_hash="test_hash",
+                    role="reporter",
+                )
+            )
+
+        def claim_once():
+            with Session(engine) as session:
+                barrier.wait(timeout=5)
+                notification, should_send = NotificationRepository(session).claim_notification(
+                    event_id=event_id,
+                    kind=NotificationKind.PUBLIC_STATE_UPDATED.value,
+                    recipient_user_id=reporter_id,
+                )
+                notification_id = notification.id
+                session.commit()
+                return notification_id, should_send
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: claim_once(), range(2)))
+        assert len({item[0] for item in results}) == 1
+        assert sorted(item[1] for item in results) == [False, True]
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                Notification.__table__.delete().where(Notification.event_id == event_id)
+            )
+            connection.execute(User.__table__.delete().where(User.id == reporter_id))
+        engine.dispose()
+
+
 def test_dispatch_public_state_notification_via_api(client: TestClient, db_session: Session):
     """POST /internal/notifications/dispatch handles public_state_updated scenario."""
     event_id = uuid.uuid4()
     incident_id = uuid.uuid4()
     reporter_id = uuid.UUID("10000000-0000-4000-8000-000000000001")
+    db_session.add(
+        Incident(
+            id=incident_id,
+            reporter_id=reporter_id,
+            category="water_leak",
+            title="Water leak in the library",
+            description="Water is leaking from the ceiling in the main library.",
+            building="Library",
+            answers={},
+            status="resolved",
+        )
+    )
+    db_session.commit()
 
     payload = {
         "event_id": str(event_id),
@@ -272,6 +334,16 @@ def test_dispatch_public_state_notification_via_api(client: TestClient, db_sessi
     data2 = res2.json()
     assert data2["notification_id"] == data1["notification_id"]
     assert data2["was_newly_sent"] is False  # SKIPPED: anti-duplicate lock active!
+
+    wrong_recipient = {
+        **payload,
+        "event_id": str(uuid.uuid4()),
+        "recipient_email": "other@demo.invalid",
+    }
+    rejected = client.post(
+        "/internal/notifications/dispatch", json=wrong_recipient, headers=SERVICE_HEADERS
+    )
+    assert rejected.status_code == 403
 
 
 def test_api_rejects_internal_note_in_public_state_dispatch(client: TestClient):

@@ -285,19 +285,42 @@ class NotificationRepository:
         if existing:
             return existing, False
 
-        notification = Notification(
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        elif dialect_name == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert
+        else:
+            raise RuntimeError(f"Unsupported notification claim database: {dialect_name}")
+
+        notification_id = uuid.uuid4()
+        claim = insert(Notification).values(
+            id=notification_id,
             event_id=event_id,
             kind=kind,
             recipient_user_id=recipient_user_id,
             status="pending",
-            provider_message_id=None,
-            error_message=None,
             created_at=current_time,
             updated_at=current_time,
         )
-        self.session.add(notification)
-        self.session.flush()
-        return notification, True
+        if dialect_name == "postgresql":
+            claim = claim.on_conflict_do_nothing(
+                constraint="uq_notifications_event_kind_recipient"
+            )
+        else:
+            claim = claim.on_conflict_do_nothing(
+                index_elements=["event_id", "kind", "recipient_user_id"]
+            )
+        claim = claim.returning(Notification.id)
+        inserted_id = self.session.scalar(claim)
+        if inserted_id is not None:
+            notification = self.session.get(Notification, inserted_id)
+            assert notification is not None
+            return notification, True
+
+        existing = self.session.scalars(stmt).first()
+        assert existing is not None
+        return existing, False
 
     def complete_notification(
         self,

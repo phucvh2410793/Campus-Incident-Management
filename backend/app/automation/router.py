@@ -415,11 +415,13 @@ def evaluate_internal_event(
     """
     # 1. Verify event exists
     incident_id: uuid.UUID | None = None
+    database_event = False
     if db is not None:
         repo = OutboxRepository(db)
         record = repo.get_event(event_id)
         if record:
             incident_id = record.incident_id
+            database_event = True
 
     if incident_id is None:
         publisher = get_event_publisher()
@@ -435,12 +437,12 @@ def evaluate_internal_event(
         )
 
     # 2. Check cached evaluation for idempotency
-    if event_id in _IN_MEMORY_EVALUATIONS:
+    if not database_event and event_id in _IN_MEMORY_EVALUATIONS:
         cached = _IN_MEMORY_EVALUATIONS[event_id]
         return EvaluateResponse(**cached)
 
     # 3. Evaluate real incident if present in DB (W8 milestone integration)
-    if db is not None:
+    if database_event:
         try:
             import sqlalchemy as sa
 
@@ -449,7 +451,16 @@ def evaluate_internal_event(
             from app.models import Department
             from app.rules.engine import evaluate_incident
 
-            incident = db.get(Incident, incident_id)
+            if not sa.inspect(db.bind).has_table("incidents"):
+                # Contract-only tests deliberately create just the outbox schema.
+                database_event = False
+                incident = None
+            else:
+                incident = db.get(Incident, incident_id)
+            if incident is None and database_event:
+                raise HTTPException(
+                    status_code=404, detail="Incident for outbox event not found"
+                )
             if incident is not None:
                 rule_res = evaluate_incident(incident.category, incident.answers or {})
 
@@ -502,12 +513,14 @@ def evaluate_internal_event(
                     "triage_required": rule_res.triage_required,
                     "incident_version": incident.version,
                 }
-                _IN_MEMORY_EVALUATIONS[event_id] = eval_result
                 return EvaluateResponse(**eval_result)
-        except Exception:
+        except HTTPException:
+            raise
+        except Exception as exc:
             db.rollback()
-            # If DB lookup or rule engine fails, fallback gracefully to contract baseline
-            pass
+            raise HTTPException(
+                status_code=503, detail="Incident evaluation could not be persisted"
+            ) from exc
 
     # 4. Default demo evaluation result (W3 milestone contract baseline)
     eval_result = {
@@ -756,6 +769,27 @@ def dispatch_test_notification_endpoint(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(err),
             ) from err
+        if db is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Incident database is required for public state notifications",
+            )
+        from app.incidents.models import Incident
+        from app.models import User
+
+        incident = db.get(Incident, payload.incident_id)
+        if incident is None:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        reporter = db.get(User, incident.reporter_id)
+        if (
+            reporter is None
+            or reporter.id != payload.recipient_user_id
+            or reporter.email.casefold() != payload.recipient_email.casefold()
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Public state notification recipient must be the incident reporter",
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
